@@ -67,13 +67,13 @@ export default function ChatWidget() {
           open ? "Close shopping assistant" : "Open shopping assistant"
         }
         onClick={() => setOpen((v) => !v)}
-        className="fixed right-4 bottom-4 z-40 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-2xl text-white shadow-lg transition-all hover:bg-accent-alt hover:shadow-xl"
+        className="fixed right-4 bottom-16 z-40 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-2xl text-white shadow-lg transition-all hover:bg-accent-alt hover:shadow-xl"
       >
         <i className={`uil ${open ? "uil-times" : "uil-comment-alt-lines"}`} />
       </button>
 
       {open && (
-        <div className="fixed right-4 bottom-20 z-40 flex h-[min(40rem,calc(100dvh-7rem))] w-[calc(100vw-2rem)] max-w-lg flex-col overflow-hidden rounded-xl border border-solid border-line/70 bg-surface shadow-2xl">
+        <div className="fixed right-4 bottom-32 z-40 flex h-[min(40rem,calc(100dvh-10rem))] w-[calc(100vw-2rem)] max-w-lg flex-col overflow-hidden rounded-xl border border-solid border-line/70 bg-surface shadow-2xl">
           <div className="flex items-center gap-2 border-b border-solid border-line/70 px-4 py-3">
             <i className="uil uil-robot text-xl text-accent" />
             <div className="min-w-0">

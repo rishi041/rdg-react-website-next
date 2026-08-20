@@ -2,15 +2,11 @@ import "./globals.css";
 import "@/features/portfolio/styles/index.scss";
 import "@/features/portfolio/styles/swiper-bundle.min.css";
 
-import Header from "@/features/portfolio/components/Header";
-import Footer from "@/features/portfolio/components/Footer";
-import ScrollUpButton from "@/features/portfolio/components/ScrollUpButton";
-
-// 📘 Next.js Metadata API — replaces the <head> of the old Vite index.html.
+// 📘 The root layout is now chrome-less: the (board) and (portfolio) route
+// groups each bring their OWN header/footer + metadata, so the product board
+// is its own brand (OnGoodPicks) while /portfolio stays the personal site.
+// Route groups don't change URLs — the parentheses folders are invisible.
 export const metadata = {
-  title: "Rushikesh's Portfolio Website",
-  description:
-    "Rushikesh Ganorkar — Frontend Engineer specializing in React.js and TypeScript, building scalable and production-grade web applications.",
   icons: { icon: "/title-icon.png" },
 };
 
@@ -44,7 +40,10 @@ export default function RootLayout({ children }) {
     // (it temporarily disables it during route transitions so pages don't
     // visibly glide to the top on navigation)
     <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
-      <head>
+      {/* suppressHydrationWarning here too: browser extensions (LocatorJS,
+          password managers…) stamp attributes onto <head> before React
+          hydrates — the flag is per-element, the one on <html> doesn't cover it */}
+      <head suppressHydrationWarning>
         {/* UNICONS — every icon in the app is an <i className="uil uil-*"> */}
         <link
           rel="stylesheet"
@@ -54,12 +53,7 @@ export default function RootLayout({ children }) {
       </head>
       <body suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        {/* Header/Footer live in the layout so every route (/, /products, /suggest,
-            /admin) shares the same navigation — 📘 layouts persist across pages. */}
-        <Header />
         {children}
-        <Footer />
-        <ScrollUpButton />
       </body>
     </html>
   );

@@ -18,7 +18,7 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata({ params }) {
   const { id } = await params;
   const product = await getProductById(id);
-  return { title: product ? `${product.name} — Products` : "Product" };
+  return { title: product ? product.name : "Product" };
 }
 
 export default async function ProductDetailPage({ params }) {

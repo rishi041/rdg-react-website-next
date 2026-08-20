@@ -20,7 +20,7 @@ import SearchFilterBar from "@/features/products/components/SearchFilterBar";
 import SearchTip from "@/features/products/components/SearchTip";
 import RelatedRow from "@/features/products/components/RelatedRow";
 
-export const metadata = { title: "Products — Rushikesh's Portfolio" };
+// title comes from the (board) layout's metadata default
 
 // 📘 The product board IS the landing page. Content changes whenever the
 // admin approves something — always render fresh.
@@ -87,7 +87,8 @@ export default async function HomePage({ searchParams }) {
               Products
             </h1>
             <p className="mt-1 text-sm text-body-light">
-              Things people actually use — suggested by visitors, picked by me.{" "}
+              Things people actually use — suggested by visitors, curated for
+              you.{" "}
               <Link
                 href="/suggest"
                 className="text-accent hover:text-accent-alt"

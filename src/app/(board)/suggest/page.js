@@ -1,7 +1,7 @@
 import SuggestForm from "@/features/suggest/components/SuggestForm";
 import { getCategories } from "@/features/products/queries";
 
-export const metadata = { title: "Suggest a product — Rushikesh's Portfolio" };
+export const metadata = { title: "Suggest a product" };
 export const dynamic = "force-dynamic"; // category list is admin-editable
 
 // 📘 Server component shell fetches the DB-driven categories and hands them

@@ -11,7 +11,7 @@ import WeeklyLineChart from "@/features/admin/components/WeeklyLineChart";
 import TrendingBarChart from "@/features/products/components/TrendingBarChart";
 import { Card } from "@/components/ui";
 
-export const metadata = { title: "Admin — Products" };
+export const metadata = { title: "Admin" };
 export const dynamic = "force-dynamic";
 
 // Group submissions per week for the growth chart (server-side — the chart
