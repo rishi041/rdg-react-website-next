@@ -10,7 +10,7 @@ export default async function SuggestPage() {
   const categories = await getCategories();
   return (
     <main className="main">
-      <section className="section container">
+      <section className="section container !pt-6">
         <h2 className="section__title">Suggest a product</h2>
         <span className="section__subtitle">
           Recommendations go live once approved

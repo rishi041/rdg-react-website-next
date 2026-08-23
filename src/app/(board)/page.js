@@ -96,7 +96,8 @@ async function getAiInsightsWithRefresh(categoryNames) {
     cached.data?.categories ??
     cached.data?.demand?.map((d) => d.category) ??
     [];
-  const categoriesChanged = Boolean(cached.data) && !sameSet(generatedFor, cats);
+  const categoriesChanged =
+    Boolean(cached.data) && !sameSet(generatedFor, cats);
   // payloads from before highlights were per-category get refreshed once
   const oldShape =
     Boolean(cached.data) &&
@@ -118,7 +119,11 @@ async function getAiInsightsWithRefresh(categoryNames) {
         .insert({ data: fresh });
       if (error) throw new Error(`ai_insights insert failed: ${error.message}`);
       clearFailed("ai_insights");
-      return { data: fresh, stale: false, generatedAt: new Date().toISOString() };
+      return {
+        data: fresh,
+        stale: false,
+        generatedAt: new Date().toISOString(),
+      };
     });
   } catch (err) {
     console.error("AI insights refresh failed:", err.message);
@@ -167,7 +172,7 @@ export default async function HomePage({ searchParams }) {
 
   return (
     <main className="main">
-      <section className="section container">
+      <section className="section container !pt-6">
         <div className="mx-auto max-w-5xl pt-4">
           {/* Left-aligned page header (design ref) */}
           <div className="mb-8">

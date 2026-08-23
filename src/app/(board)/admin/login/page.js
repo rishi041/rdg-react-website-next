@@ -18,7 +18,7 @@ export default async function AdminLoginPage() {
 
   return (
     <main className="main">
-      <section className="section container">
+      <section className="section container !pt-6">
         <h2 className="section__title">Admin</h2>
         <span className="section__subtitle">Sign in to manage products</span>
         <div className="pt-8">

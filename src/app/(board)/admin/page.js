@@ -47,7 +47,7 @@ export default async function AdminPage() {
   if (!isSupabaseConfigured()) {
     return (
       <main className="main">
-        <section className="section container">
+        <section className="section container !pt-6">
           <h2 className="section__title">Admin</h2>
           <span className="section__subtitle">
             Supabase is not configured yet — fill in .env.local (see SETUP.md)
@@ -88,7 +88,10 @@ export default async function AdminPage() {
 
   // approved products per category (single-series bars; labels carry identity)
   const byCategory = Object.entries(
-    approved.reduce((acc, p) => ({ ...acc, [p.category]: (acc[p.category] ?? 0) + 1 }), {})
+    approved.reduce(
+      (acc, p) => ({ ...acc, [p.category]: (acc[p.category] ?? 0) + 1 }),
+      {},
+    ),
   )
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
@@ -116,7 +119,7 @@ export default async function AdminPage() {
 
   return (
     <main className="main">
-      <section className="section container">
+      <section className="section container !pt-6">
         <div className="mx-auto flex max-w-5xl flex-col gap-8">
           <div className="flex items-center justify-between">
             <div>
@@ -128,13 +131,19 @@ export default async function AdminPage() {
 
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {stats.map((s) => (
-              <Card key={s.label} className="flex items-center gap-3" title={s.hint}>
+              <Card
+                key={s.label}
+                className="flex items-center gap-3"
+                title={s.hint}
+              >
                 <i className={`uil ${s.icon} text-2xl text-accent`} />
                 <div className="min-w-0">
                   <div className="text-2xl font-semibold text-title">
                     {s.value}
                   </div>
-                  <div className="text-xs leading-tight text-body-light">{s.label}</div>
+                  <div className="text-xs leading-tight text-body-light">
+                    {s.label}
+                  </div>
                 </div>
               </Card>
             ))}

@@ -42,7 +42,7 @@ export default async function ProductDetailPage({ params }) {
 
   return (
     <main className="main">
-      <section className="section container">
+      <section className="section container !pt-6">
         <ViewTracker productId={product.id} />
         <div className="mx-auto flex max-w-5xl flex-col gap-10 pt-4">
           <Link
@@ -96,7 +96,11 @@ export default async function ProductDetailPage({ params }) {
               />
             </div>
           </div>
-          <RelatedRow products={related} hues={hues} title="More in this category" />
+          <RelatedRow
+            products={related}
+            hues={hues}
+            title="More in this category"
+          />
         </div>
       </section>
       {hasGeminiKey() && <ChatWidget />}
