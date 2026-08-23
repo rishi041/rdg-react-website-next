@@ -57,6 +57,29 @@
   }
 }
 
+/* Chat launcher "live" cue: a thin ring that slowly breathes outward and
+   fades — quiet, not a filled ping halo. */
+.live-ring {
+  animation: live-ring 2.6s ease-out infinite;
+}
+@keyframes live-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  70%,
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-ring {
+    animation: none;
+    opacity: 0;
+  }
+}
+
 /*
  * Make Tailwind's `dark:` variant follow the EXISTING portfolio theme toggle,
  * which adds the `dark-theme` class to <body> (see Header.jsx). New pages get

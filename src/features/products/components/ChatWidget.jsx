@@ -48,6 +48,9 @@ function renderWithLinks(text) {
 // aborts the fetch mid-stream (the route forwards that abort to Gemini).
 export default function ChatWidget() {
   const [open, setOpen] = useState(false);
+  // "live" cue on the launcher (thin breathing ring) until the visitor opens
+  // the chat once — after that only the small online dot remains
+  const [seen, setSeen] = useState(false);
   const [input, setInput] = useState("");
   const { messages, sendMessage, status, stop, error } = useChat();
   const bottomRef = useRef(null);
@@ -61,16 +64,44 @@ export default function ChatWidget() {
   return (
     <>
       {/* launcher — sits below the portfolio's scroll-up arrow (bottom: 5rem) */}
-      <button
-        type="button"
-        aria-label={
-          open ? "Close shopping assistant" : "Open shopping assistant"
-        }
-        onClick={() => setOpen((v) => !v)}
-        className="fixed right-4 bottom-16 z-40 flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-2xl text-white shadow-lg transition-all hover:bg-accent-alt hover:shadow-xl"
-      >
-        <i className={`uil ${open ? "uil-times" : "uil-comment-alt-lines"}`} />
-      </button>
+      <div className="group fixed right-4 bottom-16 z-40 flex items-center gap-3">
+        {/* hover label (desktop, hover-capable devices only) */}
+        {!open && (
+          <span className="pointer-events-none hidden translate-x-2 rounded-lg border border-solid border-line bg-surface px-3 py-1.5 text-xs font-medium text-title opacity-0 shadow-md transition-all group-hover:translate-x-0 group-hover:opacity-100 sm:block">
+            Ask the shopping assistant
+          </span>
+        )}
+        <span className="relative flex h-14 w-14">
+          {/* live cue: a thin ring that slowly breathes outward (see .live-ring
+              in globals.css) — shown until the chat is opened once */}
+          {!open && !seen && (
+            <span
+              aria-hidden="true"
+              className="live-ring pointer-events-none absolute inset-0 rounded-full border-2 border-solid border-accent"
+            />
+          )}
+          <button
+            type="button"
+            aria-label={
+              open ? "Close shopping assistant" : "Open shopping assistant"
+            }
+            onClick={() => {
+              setSeen(true);
+              setOpen((v) => !v);
+            }}
+            className="relative flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-2xl text-white shadow-lg transition-all hover:bg-accent-alt hover:shadow-xl"
+          >
+            <i className={`uil ${open ? "uil-times" : "uil-comment-alt-lines"}`} />
+          </button>
+          {/* small online dot */}
+          {!open && (
+            <span
+              aria-hidden="true"
+              className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full border border-solid border-page bg-green-500"
+            />
+          )}
+        </span>
+      </div>
 
       {open && (
         <div className="fixed right-4 bottom-32 z-40 flex h-[min(40rem,calc(100dvh-10rem))] w-[calc(100vw-2rem)] max-w-lg flex-col overflow-hidden rounded-xl border border-solid border-line/70 bg-surface shadow-2xl">
