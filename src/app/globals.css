@@ -29,6 +29,35 @@
 }
 
 /*
+ * Skeleton "shimmer": a soft sheen sweeping left→right over placeholder
+ * blocks while AI results load (search tip / buyer digest / picks). The sheen
+ * is the theme's title colour at low alpha, so it's visible in both themes.
+ */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--input-color);
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--title-color) 14%, transparent) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/*
  * Make Tailwind's `dark:` variant follow the EXISTING portfolio theme toggle,
  * which adds the `dark-theme` class to <body> (see Header.jsx). New pages get
  * dark mode for free from the same button.

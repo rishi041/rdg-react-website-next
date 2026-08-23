@@ -10,22 +10,27 @@ import { Button, Card, Badge } from "@/components/ui";
 // this button forces a refresh NOW — useful right after adding a category.
 export default function AiTrendsPanel({ generatedAt, itemCount, hasKey }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
 
-  const regenerate = () => {
+  // Button state follows the action itself (see CategoryManager for why the
+  // transition's pending flag is NOT used): it re-enables as soon as the
+  // server has stored the new data; the page then refreshes in the background.
+  const regenerate = async () => {
     setError("");
     setDone(false);
-    startTransition(async () => {
-      try {
-        await regenerateAiTrends();
-        setDone(true);
-        router.refresh();
-      } catch (err) {
-        setError(err.message);
-      }
-    });
+    setBusy(true);
+    try {
+      await regenerateAiTrends();
+      setDone(true);
+      startTransition(() => router.refresh());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -54,13 +59,19 @@ export default function AiTrendsPanel({ generatedAt, itemCount, hasKey }) {
           </p>
         </div>
         <Button
-          disabled={isPending || !hasKey}
+          disabled={busy || !hasKey}
           onClick={regenerate}
           className="!py-2 text-sm"
         >
-          {isPending ? "Generating…" : "Regenerate now"}
+          {busy ? "Generating…" : "Regenerate now"}
         </Button>
       </div>
+      {busy && (
+        <p className="mt-3 text-sm text-body-light">
+          <i className="uil uil-spinner-alt" /> Asking Gemini for fresh picks and
+          market-pulse charts — this can take up to a minute.
+        </p>
+      )}
       {!hasKey && (
         <p className="mt-3 rounded-lg border border-solid border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm text-body">
           <i className="uil uil-exclamation-triangle" /> Gemini key missing —

@@ -1,3 +1,5 @@
+import { Spinner } from "@/components/ui";
+
 // Presentational grid of AI-picked products, each card opening Google
 // Shopping for that product (deterministic search links — no invented store
 // URLs, no fake images/prices). Shared by the search fallback
@@ -6,15 +8,32 @@
 export const shopUrl = (q) =>
   `https://www.google.com/search?tbm=shop&q=${encodeURIComponent(q)}`;
 
-export function PicksSkeleton({ count = 3, cols }) {
+// Loading state that READS as loading: spinner + what we're doing, plus
+// shimmering placeholder cards with fake text lines (a bare empty box in dark
+// mode looked like a finished-but-empty result).
+export function PicksSkeleton({ count = 3, cols, label = "Finding picks on the web…" }) {
   return (
-    <div className={`grid gap-3 ${cols}`}>
-      {Array.from({ length: count }, (_, i) => (
-        <div
-          key={i}
-          className="h-40 animate-pulse rounded-lg border border-solid border-line/70 bg-surface"
-        />
-      ))}
+    <div aria-busy="true" aria-live="polite">
+      <div className="mb-2 flex items-center gap-2 text-sm text-body-light">
+        <Spinner className="h-4 w-4" />
+        <span className="animate-pulse">{label}</span>
+      </div>
+      <div className={`grid gap-3 ${cols}`}>
+        {Array.from({ length: count }, (_, i) => (
+          <div
+            key={i}
+            className="overflow-hidden rounded-lg border border-solid border-line/70 bg-surface"
+          >
+            <div className="shimmer h-16" />
+            <div className="flex flex-col gap-2 p-3">
+              <div className="shimmer h-3.5 w-4/5 rounded" />
+              <div className="shimmer h-3 w-1/2 rounded" />
+              <div className="shimmer h-3 w-full rounded" />
+              <div className="shimmer mt-2 h-3 w-2/5 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

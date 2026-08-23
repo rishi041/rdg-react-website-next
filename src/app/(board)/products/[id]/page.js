@@ -48,11 +48,14 @@ export default async function ProductDetailPage({ params }) {
             <i className="uil uil-arrow-left" /> Back
           </Link>
           <div className="grid gap-8 md:grid-cols-2">
+            {/* contain, not cover: on the detail page the whole picture
+                should be visible (cards crop to fill, here we don't) */}
             <ProductImage
               src={product.image_url}
               alt={product.name}
               hue={hues[product.category] ?? 210}
-              className="aspect-square w-full rounded-2xl"
+              fit="contain"
+              className="aspect-square w-full rounded-2xl border border-solid border-line/60"
             />
             <div className="flex flex-col gap-4">
               <Badge>{product.category}</Badge>

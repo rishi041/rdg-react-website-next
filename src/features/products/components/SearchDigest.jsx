@@ -42,8 +42,11 @@ export default function SearchDigest({ term }) {
   if (!digest) {
     return (
       <div className="rounded-lg border border-solid border-line/70 bg-surface px-4 py-3">
-        <div className="mb-2 h-3 w-40 animate-pulse rounded bg-field" />
-        <div className="h-3 w-full animate-pulse rounded bg-field" />
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading buyer summary">
+          <div className="shimmer h-3 w-40 rounded" />
+          <div className="shimmer h-3.5 w-full rounded" />
+          <div className="shimmer h-3.5 w-4/5 rounded" />
+        </div>
       </div>
     );
   }

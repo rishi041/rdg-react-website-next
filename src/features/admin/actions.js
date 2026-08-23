@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
-  generateProductTip,
   generateReviewDigest,
   generateTrendingPicks,
   generateMarketInsights,
@@ -34,39 +33,16 @@ function refresh() {
 
 export async function approveProduct(id) {
   const supabase = await getAuthedClient();
-
-  const { data: product } = await supabase
-    .from("products")
-    .select("*")
-    .eq("id", id)
-    .single();
-  if (!product) throw new Error("Product not found");
-
-  // Generate the tip AND the grounded buyer digest ONCE, in parallel, and
-  // cache both on the row. Approval must succeed even if either AI call
-  // fails — they're nice-to-haves (the digest also needs Google Search
-  // grounding quota, which may not be enabled yet).
-  const [tipResult, digestResult] = hasGeminiKey()
-    ? await Promise.allSettled([
-        generateProductTip(product),
-        generateReviewDigest(product.name),
-      ])
-    : [{ status: "rejected" }, { status: "rejected" }];
-  const aiTip = tipResult.status === "fulfilled" ? tipResult.value : null;
-  const digest = digestResult.status === "fulfilled" ? digestResult.value : null;
-  if (tipResult.status === "rejected" && tipResult.reason)
-    console.error("AI tip generation failed:", tipResult.reason.message);
-  if (digestResult.status === "rejected" && digestResult.reason)
-    console.error("Review digest failed:", digestResult.reason.message);
-
+  // 📘 Approval is a plain, instant DB update. The AI extras are NOT generated
+  // here any more (they made "Approve" wait 20-40s on Gemini):
+  //   - the AI tip is back-filled once on the product's first page view by
+  //     AiTipCard (Suspense-streamed, then stored on the row),
+  //   - the grounded buyer summary is generated on demand via the admin
+  //     "Generate buyer summary" button (needs grounding quota anyway).
+  // Same "DB first, AI once" contract, but approval never blocks on AI.
   const { error } = await supabase
     .from("products")
-    .update({
-      status: "approved",
-      ai_tip: aiTip,
-      review_digest: digest?.summary ?? null,
-      review_sources: digest?.sources ?? null,
-    })
+    .update({ status: "approved" })
     .eq("id", id);
   if (error) throw new Error(error.message);
   refresh();
@@ -163,19 +139,24 @@ export async function regenerateAiTrends() {
     .order("created_at", { ascending: true });
   const names = (categories ?? []).map((c) => c.name);
 
-  const items = await generateTrendingPicks(names.length ? names : ["Other"]);
+  const cats = names.length ? names : ["Other"];
+  // Both generations in PARALLEL (halves the wait); the market pulse is a
+  // nice-to-have — its failure must not undo a trending refresh that worked.
+  const [trendsResult, insightsResult] = await Promise.allSettled([
+    generateTrendingPicks(cats),
+    generateMarketInsights(cats),
+  ]);
+  if (trendsResult.status === "rejected") throw trendsResult.reason;
+  const items = trendsResult.value;
   // 📘 service-role client: ai_trends has no insert policy on purpose — only
   // the server may write it, never a browser.
   const admin = createAdminClient();
   const { error } = await admin.from("ai_trends").insert({ items });
   if (error) throw new Error(error.message);
-  // also refresh the board's AI market pulse (stats + charts); failure here
-  // must not undo the trending refresh that already succeeded
-  try {
-    const insights = await generateMarketInsights(names.length ? names : ["Other"]);
-    await admin.from("ai_insights").insert({ data: insights });
-  } catch (err) {
-    console.error("AI market pulse refresh failed:", err.message);
+  if (insightsResult.status === "fulfilled") {
+    await admin.from("ai_insights").insert({ data: insightsResult.value });
+  } else {
+    console.error("AI market pulse refresh failed:", insightsResult.reason?.message);
   }
   refresh();
   return items.length;

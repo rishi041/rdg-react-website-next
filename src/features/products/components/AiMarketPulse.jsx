@@ -10,6 +10,7 @@ export default function AiMarketPulse({
   insights,
   generatedAt,
   stale = false,
+  hues = {},
 }) {
   if (!insights?.demand?.length) return null;
 
@@ -35,28 +36,47 @@ export default function AiMarketPulse({
         <Badge>AI estimates · weekly</Badge>
       </div>
 
+      {/* one tile per admin-managed category — grows with the category list,
+          so it scrolls horizontally like the trending strips */}
       {highlights.length > 0 && (
-        <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {highlights.map((h) => (
-            <div
-              key={h.label}
-              className="rounded-lg border border-solid border-line/70 bg-surface px-4 py-3"
-              title={h.note}
-            >
+        <div className="-mx-1 mb-3 flex gap-3 overflow-x-auto px-1 pb-2">
+          {highlights.map((h) => {
+            const hue = hues[h.category] ?? 210;
+            return (
               <div
-                className="truncate text-lg font-bold text-title"
-                title={h.value}
+                key={h.category ?? h.label}
+                className="flex w-52 shrink-0 flex-col overflow-hidden rounded-lg border border-solid border-line/70 bg-surface"
+                title={h.note}
               >
-                {h.value}
-              </div>
-              <div className="text-xs text-body-light">{h.label}</div>
-              {h.note && (
-                <div className="mt-1 line-clamp-2 text-[11px] leading-snug text-body-light/80">
-                  {h.note}
+                <div
+                  className="flex items-center gap-1.5 px-4 pt-3 text-xs font-medium text-body-light"
+                  style={{
+                    background: `linear-gradient(180deg, hsl(${hue} 70% 50% / 0.18), transparent)`,
+                  }}
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-full"
+                    style={{ background: `hsl(${hue} 70% 50%)` }}
+                  />
+                  {h.category ?? "Market"}
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="px-4 pb-3">
+                  <div
+                    className="truncate text-lg font-bold text-title"
+                    title={h.value}
+                  >
+                    {h.value}
+                  </div>
+                  <div className="text-xs font-medium text-body">{h.label}</div>
+                  {h.note && (
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-body-light">
+                      {h.note}
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -76,7 +96,9 @@ export default function AiMarketPulse({
           />
         </Card>
         {trend.length > 0 && (
-          <Card>
+          // same height as the category card (grid stretch); the chart is a
+          // flex child that grows to fill whatever height that gives it
+          <Card className="flex flex-col">
             <h3 className="mb-2 text-sm font-semibold text-title">
               <i className="uil uil-chart-growth text-accent" /> Buying
               interest, last 6 months
@@ -89,7 +111,7 @@ export default function AiMarketPulse({
               xKey="month"
               yKey="index"
               label="Interest index"
-              className="h-82"
+              className="min-h-52 flex-1"
             />
           </Card>
         )}

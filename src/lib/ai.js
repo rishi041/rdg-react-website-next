@@ -42,13 +42,16 @@ const modelUnavailableUntil = new Map(); // model id → timestamp
 
 // generateText with model fallback. `maxRetries: 1` per model: a daily cap
 // or an overloaded model won't clear by hammering it, so move on quickly.
-async function generate(opts) {
+async function generate(opts, { fallback = true } = {}) {
   const now = Date.now();
   const healthy = MODEL_IDS.filter(
     (id) => (modelUnavailableUntil.get(id) ?? 0) <= now,
   );
   // if every model is on cooldown, probe them all again rather than give up
-  const candidates = healthy.length ? healthy : MODEL_IDS;
+  const pool = healthy.length ? healthy : MODEL_IDS;
+  // fallback: false → primary model only, fail fast (used where the quota is
+  // per KEY, e.g. Google Search grounding — trying 5 models just adds delay)
+  const candidates = fallback ? pool : [MODEL_IDS[0]];
   let lastErr;
   for (const id of candidates) {
     try {
@@ -139,11 +142,14 @@ export async function generateSearchTip(term) {
 // 📘 Returns { summary, sources: [{ title, url }] }. Cached by callers
 // (products.review_digest / search_digests) so it runs once per subject.
 export async function generateReviewDigest(subject) {
-  const result = await generate({
-    // the tool MUST be named google_search for Gemini grounding
-    tools: { google_search: google.tools.googleSearch({}) },
-    prompt: `Using Google Search, summarize in 2-4 plain-text sentences what buyers commonly say about "${subject}": the most common praise and the most common complaints. No markdown, no bullet lists, no invented specifics, and do not present anything as a direct quote or testimonial.`,
-  });
+  const result = await generate(
+    {
+      // the tool MUST be named google_search for Gemini grounding
+      tools: { google_search: google.tools.googleSearch({}) },
+      prompt: `Using Google Search, summarize in 2-4 plain-text sentences what buyers commonly say about "${subject}": the most common praise and the most common complaints. No markdown, no bullet lists, no invented specifics, and do not present anything as a direct quote or testimonial.`,
+    },
+    { fallback: false }, // grounding quota is per key — fail fast, don't loop models
+  );
 
   // Primary: the SDK's normalized citations
   let sources = (result.sources ?? [])
@@ -247,8 +253,8 @@ export async function generateMarketInsights(categories) {
 Respond with ONLY a JSON object (no markdown fences, no prose) of this exact shape:
 {"demand":[{"category":"<one of the categories>","score":<integer 0-100, relative buying interest this month>}],
  "trend":[{"month":"<month label>","index":<integer 0-100>}],
- "highlights":[{"label":"<short stat label>","value":"<short value, e.g. Fitness or +18%>","note":"<one short sentence>"}]}
-Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6 entries — overall consumer-product buying interest in India for these months, in this exact order (oldest first, ending this month): ${months.join(", ")}. "highlights" has exactly 4 entries (e.g. fastest-growing category, busiest shopping month, most searched category, peak discount season) relevant to ${currentIndiaDate()}.`,
+ "highlights":[{"category":"<one of the categories>","value":"<short headline stat, e.g. +18% MoM or Peak in Oct>","label":"<3-5 word stat name, e.g. Festive demand surge>","note":"<one short sentence on what is driving this category right now>"}]}
+Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6 entries — overall consumer-product buying interest in India for these months, in this exact order (oldest first, ending this month): ${months.join(", ")}. "highlights" has exactly one entry PER CATEGORY listed (same order as the categories), each giving that category's single most notable current-market stat relevant to ${currentIndiaDate()}.`,
   });
   const cleaned = text
     .trim()
@@ -268,11 +274,16 @@ Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6
     month: months[months.length - rawTrend.length + i],
     index: clamp100(t.index),
   }));
-  const highlights = (Array.isArray(raw.highlights) ? raw.highlights : [])
-    .filter((h) => h && typeof h.label === "string")
-    .slice(0, 4)
-    .map((h) => ({
-      label: h.label,
+  // One highlight tile per admin category, kept in the admin's order; any
+  // category the model skipped is simply absent (never invented here).
+  const rawHighlights = (Array.isArray(raw.highlights) ? raw.highlights : [])
+    .filter((h) => h && typeof h.category === "string");
+  const highlights = categories
+    .map((c) => rawHighlights.find((h) => h.category.toLowerCase() === c.toLowerCase()))
+    .filter(Boolean)
+    .map((h, i, arr) => ({
+      category: categories.find((c) => c.toLowerCase() === h.category.toLowerCase()) ?? h.category,
+      label: typeof h.label === "string" ? h.label : "",
       value: String(h.value ?? ""),
       note: typeof h.note === "string" ? h.note : "",
     }));

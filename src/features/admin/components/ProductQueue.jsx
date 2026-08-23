@@ -49,10 +49,21 @@ export default function ProductQueue({
   hasKey = false,
 }) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
   const [busyId, setBusyId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState({});
+  // Local copy of the list so the UI updates the INSTANT an action succeeds
+  // (approve/reject remove the card, edit merges the draft) — without waiting
+  // for the server re-render. It re-syncs whenever fresh props arrive.
+  const [list, setList] = useState(items);
+  // 📘 re-sync during render (React's "adjust state on prop change" pattern)
+  // instead of an effect — no extra render pass, no lint complaint
+  const [syncedItems, setSyncedItems] = useState(items);
+  if (syncedItems !== items) {
+    setSyncedItems(items);
+    setList(items);
+  }
   // image editing: "keep" current | "upload" a file | "url" paste | "remove"
   const [imageMode, setImageMode] = useState("keep");
   const [file, setFile] = useState(null);
@@ -79,27 +90,42 @@ export default function ProductQueue({
     else if (imageMode === "url") image_url = draft.image_url.trim() || null;
     else if (imageMode === "upload" && file) image_url = await uploadImage(file);
     await updateProduct(p.id, { ...draft, image_url });
-  };
-
-  const run = (id, action) => {
-    setBusyId(id);
-    startTransition(async () => {
-      try {
-        await action();
-        router.refresh();
-      } catch (err) {
-        console.error(err);
-        // server actions throw readable messages (e.g. grounding quota) —
-        // surface them instead of a generic failure
-        alert(err?.message || "Action failed — check the console.");
-      } finally {
-        setBusyId(null);
-        setEditingId(null);
-      }
+    patchLocal(p.id, {
+      name: draft.name.trim(),
+      link: draft.link.trim(),
+      location: draft.location.trim() || null,
+      category: draft.category,
+      description: draft.description.trim() || null,
+      image_url,
     });
   };
 
-  if (!items.length) {
+  // 📘 Button state follows the Server Action promise itself, NOT the
+  // transition's pending flag — that flag only clears after router.refresh()
+  // has re-rendered the whole page, which on a busy dev server made buttons
+  // look "stuck" on Working… long after the DB had changed. `apply` patches
+  // the local list immediately; the refresh then runs in the background.
+  const run = async (id, action, apply) => {
+    setBusyId(id);
+    try {
+      await action();
+      apply?.();
+      startTransition(() => router.refresh());
+    } catch (err) {
+      console.error(err);
+      // server actions throw readable messages (e.g. grounding quota) —
+      // surface them instead of a generic failure
+      alert(err?.message || "Action failed — check the console.");
+    } finally {
+      setBusyId(null);
+      setEditingId(null);
+    }
+  };
+  const removeLocal = (id) => setList((l) => l.filter((p) => p.id !== id));
+  const patchLocal = (id, fields) =>
+    setList((l) => l.map((p) => (p.id === id ? { ...p, ...fields } : p)));
+
+  if (!list.length) {
     return mode === "pending" ? (
       <EmptyState icon="uil-check-circle" title="No pending suggestions">
         New submissions will show up here.
@@ -113,8 +139,8 @@ export default function ProductQueue({
 
   return (
     <div className="flex flex-col gap-4">
-      {items.map((p) => {
-        const busy = isPending && busyId === p.id;
+      {list.map((p) => {
+        const busy = busyId === p.id;
         const editing = editingId === p.id;
         return (
           <Card key={p.id} className="flex flex-col gap-4 sm:flex-row">
@@ -312,7 +338,7 @@ export default function ProductQueue({
                   {mode === "pending" && (
                     <Button
                       disabled={busy}
-                      onClick={() => run(p.id, () => approveProduct(p.id))}
+                      onClick={() => run(p.id, () => approveProduct(p.id), () => removeLocal(p.id))}
                       className="!py-2 text-sm"
                     >
                       {busy ? "Working…" : "Approve"}
@@ -329,7 +355,7 @@ export default function ProductQueue({
                   <Button
                     variant="danger"
                     disabled={busy}
-                    onClick={() => run(p.id, () => rejectProduct(p.id))}
+                    onClick={() => run(p.id, () => rejectProduct(p.id), () => removeLocal(p.id))}
                     className="!py-2 text-sm"
                   >
                     {busy

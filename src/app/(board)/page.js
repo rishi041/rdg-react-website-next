@@ -83,7 +83,10 @@ async function getAiInsightsWithRefresh(categoryNames) {
     [];
   const categoriesChanged =
     Boolean(cached.data) && !sameSet(generatedFor, categoryNames);
-  const needsRefresh = cached.stale || categoriesChanged;
+  // payloads from before highlights were per-category get refreshed once
+  const oldShape =
+    Boolean(cached.data) && !(cached.data.highlights ?? []).every((h) => h.category);
+  const needsRefresh = cached.stale || categoriesChanged || oldShape;
   if (!needsRefresh) return cached;
   if (!hasGeminiKey() || recentlyFailed("ai_insights")) {
     return { ...cached, stale: true }; // keep showing the last payload
@@ -214,6 +217,7 @@ export default async function HomePage({ searchParams }) {
                 insights={aiInsights?.data}
                 generatedAt={aiInsights?.generatedAt}
                 stale={aiInsights?.stale}
+                hues={hues}
               />
               {/* 📘 same server-fetch/client-chart pattern as /admin — the
                   page passes plain rows, recharts renders client-side */}

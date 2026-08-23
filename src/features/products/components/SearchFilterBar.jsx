@@ -44,9 +44,11 @@ export default function SearchFilterBar({ categories = [] }) {
   };
 
   return (
-    // search input + category chips share one row on desktop, stack on mobile
+    // search input + category chips share one row on desktop, stack on mobile.
+    // The search box keeps a fixed comfortable width; the chips (admin-managed,
+    // can grow) take the rest and WRAP instead of squeezing the input.
     <div className="flex flex-col gap-3 md:flex-row md:items-center">
-      <div className="relative w-full md:flex-1">
+      <div className="relative w-full md:w-72 md:shrink-0 lg:w-80">
         <i className="uil uil-search absolute top-1/2 left-4 -translate-y-1/2 text-body-light" />
         <Input
           value={text}
@@ -69,7 +71,7 @@ export default function SearchFilterBar({ categories = [] }) {
           </button>
         )}
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         <Chip active={!activeCategory} onClick={() => navigate(activeQ, "")}>
           All
         </Chip>

@@ -45,7 +45,10 @@ export default function SearchTip({ term }) {
         <i className="uil uil-lightbulb-alt" /> Quick tip
       </div>
       {loading ? (
-        <div className="h-4 w-3/4 animate-pulse rounded bg-field" />
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading tip">
+          <div className="shimmer h-3.5 w-11/12 rounded" />
+          <div className="shimmer h-3.5 w-2/3 rounded" />
+        </div>
       ) : (
         <p className="text-sm leading-snug text-body">{tip}</p>
       )}

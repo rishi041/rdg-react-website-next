@@ -11,19 +11,27 @@ export default function CategoryManager({ categories }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [error, setError] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [busy, setBusy] = useState(false);
+  const [, startTransition] = useTransition();
 
-  const run = (action, after) => {
+  // 📘 The Server Action already revalidates /admin, and router.refresh()
+  // re-fetches the list. We deliberately DON'T tie the button to the
+  // transition's pending flag: that flag only clears once the whole page
+  // has re-rendered, so on a busy dev server the button looked "stuck" even
+  // though the row was already saved. The button re-enables the moment the
+  // action resolves; the list catches up as soon as the refresh lands.
+  const run = async (action, after) => {
     setError("");
-    startTransition(async () => {
-      try {
-        await action();
-        after?.();
-        router.refresh(); // refetch server data so the list updates immediately
-      } catch (err) {
-        setError(err.message);
-      }
-    });
+    setBusy(true);
+    try {
+      await action();
+      after?.();
+      startTransition(() => router.refresh());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -46,7 +54,7 @@ export default function CategoryManager({ categories }) {
             <button
               type="button"
               aria-label={`Delete ${c.name}`}
-              disabled={isPending}
+              disabled={busy}
               onClick={() => run(() => deleteCategory(c.id))}
               className="cursor-pointer border-none bg-transparent text-body-light hover:text-red-500"
             >
@@ -72,8 +80,8 @@ export default function CategoryManager({ categories }) {
           placeholder="New category…"
           className="!py-2 text-sm"
         />
-        <Button type="submit" disabled={isPending || !name.trim()} className="!py-2 text-sm">
-          {isPending ? "…" : "Add"}
+        <Button type="submit" disabled={busy || !name.trim()} className="!py-2 text-sm">
+          {busy ? "Adding…" : "Add"}
         </Button>
       </form>
       {error && <p className="mt-2 text-sm text-red-500">{error}</p>}

@@ -91,7 +91,11 @@ export default function IndiaPicks({ hues = {} }) {
       </div>
 
       {!current ? (
-        <PicksSkeleton count={TOPIC_PICK_COUNT} cols={COLS} />
+        <PicksSkeleton
+          count={TOPIC_PICK_COUNT}
+          cols={COLS}
+          label={`Loading ${topic.label.toLowerCase()} picks…`}
+        />
       ) : current === "failed" ? (
         <p className="rounded-lg border border-dashed border-line p-4 text-center text-xs text-body-light">
           Couldn&apos;t load this list right now — try another tab.
