@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { generateReviewDigest, hasGeminiKey } from "@/lib/ai";
+import { generateReviewDigest, hasGeminiKey, recentlyFailed, markFailed } from "@/lib/ai";
 
 // GET /api/search-digest?term=dumbbell
 // Grounded "What buyers are saying" for a search term — same cache-first
@@ -31,7 +31,9 @@ export async function GET(request) {
   }
 
   // 2. miss → one grounded generation, stored for everyone after
-  if (!hasGeminiKey()) return NextResponse.json({ summary: null });
+  if (!hasGeminiKey() || recentlyFailed(`digest:${term}`)) {
+    return NextResponse.json({ summary: null });
+  }
   try {
     const { summary, sources } = await generateReviewDigest(term);
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -44,6 +46,7 @@ export async function GET(request) {
     // grounding quota / no sources / network — never cache failures, so a
     // later visit retries once grounding is available
     console.error("search-digest generation failed:", err.message);
+    markFailed(`digest:${term}`);
     return NextResponse.json({ summary: null });
   }
 }

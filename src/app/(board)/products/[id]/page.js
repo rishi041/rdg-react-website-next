@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import {
   getProductById,
@@ -11,8 +12,9 @@ import ViewTracker from "@/features/products/components/ViewTracker";
 import RelatedRow from "@/features/products/components/RelatedRow";
 import ChatWidget from "@/features/products/components/ChatWidget";
 import ReviewDigestCard from "@/features/products/components/ReviewDigestCard";
+import AiTipCard from "@/features/products/components/AiTipCard";
 import { hasGeminiKey } from "@/lib/ai";
-import { Badge, Card } from "@/components/ui";
+import { Badge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -69,20 +71,13 @@ export default async function ProductDetailPage({ params }) {
               <div className="mt-2">
                 <BuyNowButton product={product} />
               </div>
-              {/* 📘 ai_tip was generated ONCE when the admin approved this
-                  product and cached in the DB — this is a plain column read,
-                  no AI call happens on page visits. */}
-              {product.ai_tip && (
-                <Card className="mt-4 flex items-start gap-3 border-l-4 border-l-accent">
-                  <i className="uil uil-robot mt-0.5 text-xl text-accent" />
-                  <div>
-                    <div className="mb-1 text-sm font-semibold text-title">
-                      AI tip
-                    </div>
-                    <p className="text-sm text-body">{product.ai_tip}</p>
-                  </div>
-                </Card>
-              )}
+              {/* 📘 ai_tip is normally a plain column read (generated once at
+                  approval). If it's missing (Gemini was out of quota then),
+                  AiTipCard backfills it ONCE and stores it — inside Suspense
+                  so the page streams immediately and the card pops in. */}
+              <Suspense fallback={null}>
+                <AiTipCard product={product} className="mt-4" />
+              </Suspense>
               {/* 📘 Grounded digest: generated once at approval (or via the
                   admin "Generate buyer summary" button) with Google Search
                   grounding and cached on the row — plain column read here.

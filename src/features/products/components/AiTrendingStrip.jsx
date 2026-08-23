@@ -4,15 +4,35 @@ import { Badge } from "@/components/ui";
 // AI can't provide real images or store URLs, so each pick gets an honest
 // category-gradient card, an "AI pick" badge, and an Amazon search link.
 // `hues` maps category name → hue, straight from the admin-managed table.
-export default function AiTrendingStrip({ items, hues = {} }) {
+// `generatedAt`/`stale` come from the weekly cache: when Gemini's quota is
+// gone we keep showing the last stored list and say so.
+export default function AiTrendingStrip({
+  items,
+  hues = {},
+  generatedAt,
+  stale = false,
+}) {
   if (!items?.length) return null;
+  const updated = generatedAt
+    ? new Date(generatedAt).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+        timeZone: "Asia/Kolkata",
+      })
+    : null;
   return (
     <div>
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         <i className="uil uil-robot text-accent" />
         <h2 className="text-sm font-semibold tracking-wide uppercase text-body">
           AI trending this week
         </h2>
+        {updated && (
+          <span className="text-[11px] text-body-light">
+            <i className="uil uil-clock" /> Updated {updated}
+            {stale && " · refresh pending, showing the latest saved list"}
+          </span>
+        )}
       </div>
       <div className="-mx-1 flex gap-3 overflow-x-auto px-1 pb-2">
         {items.map((item, i) => {

@@ -19,6 +19,16 @@
 }
 
 /*
+ * Horizontal strips (AI trending / Trending now / Related row): the
+ * portfolio's global scrollbar rule only sets `width` (vertical bars), so
+ * horizontal bars fell back to the thick browser default. Only the thickness
+ * changes here — colours/shape stay as they were.
+ */
+.overflow-x-auto::-webkit-scrollbar {
+  height: 0.6rem;
+}
+
+/*
  * Make Tailwind's `dark:` variant follow the EXISTING portfolio theme toggle,
  * which adds the `dark-theme` class to <body> (see Header.jsx). New pages get
  * dark mode for free from the same button.

@@ -8,7 +8,14 @@ import {
   getAiTrends,
   getAiInsights,
 } from "@/features/products/queries";
-import { generateTrendingPicks, generateMarketInsights, hasGeminiKey } from "@/lib/ai";
+import {
+  generateTrendingPicks,
+  generateMarketInsights,
+  hasGeminiKey,
+  recentlyFailed,
+  markFailed,
+  clearFailed,
+} from "@/lib/ai";
 import ChatWidget from "@/features/products/components/ChatWidget";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AiTrendingStrip from "@/features/products/components/AiTrendingStrip";
@@ -31,37 +38,67 @@ import RelatedRow from "@/features/products/components/RelatedRow";
 // admin approves something — always render fresh.
 export const dynamic = "force-dynamic";
 
-// Lazy weekly refresh of the AI-trending cache: the first visitor after the
-// 7-day expiry pays one Gemini call, everyone else reads the cached list.
-// Any failure falls back to the previous cache (or hides the section).
+// 📘 "DB first, AI once, keep the last good data" (see lib/ai.js):
+// Lazy weekly refresh of the AI-trending cache — the first visitor after the
+// 7-day expiry pays one Gemini call, everyone else reads the stored list.
+// If Gemini is unavailable (daily free quota etc.) the previous list stays on
+// screen, flagged stale, and we don't retry on every page view (cooldown) —
+// so the board never waits on a call that will fail again.
 async function getAiTrendsWithRefresh(categoryNames) {
-  const { items, stale } = await getAiTrends();
-  if (!stale || !hasGeminiKey()) return items;
+  const cached = await getAiTrends();
+  if (!cached.stale || !hasGeminiKey() || recentlyFailed("ai_trends")) {
+    return cached;
+  }
   try {
     const fresh = await generateTrendingPicks(
-      categoryNames.length ? categoryNames : ["Other"]
+      categoryNames.length ? categoryNames : ["Other"],
     );
     await createAdminClient().from("ai_trends").insert({ items: fresh });
-    return fresh;
+    clearFailed("ai_trends");
+    return {
+      items: fresh,
+      stale: false,
+      generatedAt: new Date().toISOString(),
+    };
   } catch (err) {
     console.error("AI trends refresh failed:", err.message);
-    return items; // last cached list, or null → section hidden
+    markFailed("ai_trends");
+    return cached; // last stored list (stale: true), or null → section hidden
   }
 }
 
-// Same lazy weekly refresh for the AI market pulse (stats + charts payload).
+// Same contract for the AI market pulse (stats + charts payload) — plus the
+// payload is tied to the admin-managed category list: add/remove a category
+// in /admin and the next visit regenerates (one call), so "Buying interest by
+// category" always shows the CURRENT categories. On failure the previous
+// payload stays on screen, flagged stale.
+const sameSet = (a = [], b = []) =>
+  a.length === b.length && a.every((x) => b.includes(x));
+
 async function getAiInsightsWithRefresh(categoryNames) {
   const cached = await getAiInsights();
-  if (!cached.stale || !hasGeminiKey()) return cached;
+  const generatedFor =
+    cached.data?.categories ??
+    cached.data?.demand?.map((d) => d.category) ??
+    [];
+  const categoriesChanged =
+    Boolean(cached.data) && !sameSet(generatedFor, categoryNames);
+  const needsRefresh = cached.stale || categoriesChanged;
+  if (!needsRefresh) return cached;
+  if (!hasGeminiKey() || recentlyFailed("ai_insights")) {
+    return { ...cached, stale: true }; // keep showing the last payload
+  }
   try {
     const fresh = await generateMarketInsights(
-      categoryNames.length ? categoryNames : ["Other"]
+      categoryNames.length ? categoryNames : ["Other"],
     );
     await createAdminClient().from("ai_insights").insert({ data: fresh });
-    return { data: fresh, generatedAt: new Date().toISOString() };
+    clearFailed("ai_insights");
+    return { data: fresh, stale: false, generatedAt: new Date().toISOString() };
   } catch (err) {
     console.error("AI insights refresh failed:", err.message);
-    return cached; // last cached payload, or null → section hidden
+    markFailed("ai_insights");
+    return { ...cached, stale: true }; // last stored payload, or null → hidden
   }
 }
 
@@ -105,9 +142,9 @@ export default async function HomePage({ searchParams }) {
         <div className="mx-auto max-w-5xl pt-4">
           {/* Left-aligned page header (design ref) */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold tracking-tight text-title">
+            {/* <h1 className="text-3xl font-bold tracking-tight text-title">
               Products
-            </h1>
+            </h1> */}
             <p className="mt-1 text-sm text-body-light">
               Things people actually use — suggested by visitors, curated for
               you.{" "}
@@ -162,7 +199,12 @@ export default async function HomePage({ searchParams }) {
           ) : (
             <div className="flex flex-col gap-8">
               <StatsBar stats={stats} />
-              <AiTrendingStrip items={aiTrends} hues={hues} />
+              <AiTrendingStrip
+                items={aiTrends?.items}
+                hues={hues}
+                generatedAt={aiTrends?.generatedAt}
+                stale={aiTrends?.stale}
+              />
               {/* "Top picks in India" — the search-fallback picks, but
                   always on: tabbed preset topics, 10 real products each,
                   opening Google Shopping. Client island, fetches per tab. */}
@@ -171,6 +213,7 @@ export default async function HomePage({ searchParams }) {
               <AiMarketPulse
                 insights={aiInsights?.data}
                 generatedAt={aiInsights?.generatedAt}
+                stale={aiInsights?.stale}
               />
               {/* 📘 same server-fetch/client-chart pattern as /admin — the
                   page passes plain rows, recharts renders client-side */}

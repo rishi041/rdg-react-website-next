@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
-import { generateSearchTip } from "@/lib/ai";
+import { generateSearchTip, hasGeminiKey, recentlyFailed, markFailed } from "@/lib/ai";
 
 // 📘 Route Handler — the App Router version of an API endpoint.
 // GET /api/search-tip?term=dumbbell
@@ -30,12 +30,18 @@ export async function GET(request) {
     return NextResponse.json({ tip: cached.tip, cached: true });
   }
 
-  // 2. miss → generate once and store
+  // 2. miss → generate once and store. A new term has nothing stored to
+  // fall back on, so on failure the tip is simply hidden — and we don't
+  // retry the same term on every keystroke/visit while Gemini is down.
+  if (!hasGeminiKey() || recentlyFailed(`tip:${term}`)) {
+    return NextResponse.json({ tip: null });
+  }
   let tip = null;
   try {
     tip = await generateSearchTip(term);
   } catch (err) {
     console.error("search-tip generation failed:", err.message);
+    markFailed(`tip:${term}`);
     return NextResponse.json({ tip: null });
   }
 

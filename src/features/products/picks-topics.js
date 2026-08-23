@@ -24,7 +24,20 @@ export const PICK_TOPICS = [
 ];
 
 export const TOPIC_PICK_COUNT = 10;
-// preset topics refresh once a day; searched terms keep their forever cache
-export const TOPIC_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Preset topics are "today's" lists: ONE generation per topic per calendar
+// day (India time). The first visitor after midnight IST pays the Gemini
+// call, the result is stored in search_picks, and everyone else that day
+// reads it from Postgres. If Gemini is unavailable (daily free quota gone),
+// the latest stored list is served instead — never an empty section.
+const IST_DAY = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+export const istDayKey = (date = new Date()) => IST_DAY.format(date); // "2026-08-23"
+export const isFreshToday = (isoDate) =>
+  Boolean(isoDate) && istDayKey(new Date(isoDate)) === istDayKey();
 
 export const getTopic = (key) => PICK_TOPICS.find((t) => t.key === key);

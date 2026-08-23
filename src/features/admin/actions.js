@@ -181,13 +181,32 @@ export async function regenerateAiTrends() {
   return items.length;
 }
 
+// Admin edit — every field the Suggest form has (name, link, location,
+// category, image, note) so an incomplete or wrong suggestion can be fixed
+// in place. The image itself is uploaded from the browser (same bucket/path
+// rule as the Suggest form); this only stores the resulting URL.
 export async function updateProduct(id, fields) {
   const supabase = await getAuthedClient();
   // whitelist editable fields — never spread client input straight into a query
-  const { name, description, link, location, category } = fields;
+  const clean = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const name = clean(fields.name);
+  const link = clean(fields.link);
+  if (!name || !link) throw new Error("Product name and purchase link are required.");
+  if (!/^https?:\/\//i.test(link)) throw new Error("Purchase link must start with http:// or https://");
+  const image_url = clean(fields.image_url);
+  if (image_url && !/^https?:\/\//i.test(image_url))
+    throw new Error("Image URL must start with http:// or https://");
+
   const { error } = await supabase
     .from("products")
-    .update({ name, description, link, location, category })
+    .update({
+      name,
+      link,
+      location: clean(fields.location),
+      category: clean(fields.category) ?? "Other",
+      description: clean(fields.description),
+      image_url, // null = no image (admin removed it or none was given)
+    })
     .eq("id", id);
   if (error) throw new Error(error.message);
   refresh();

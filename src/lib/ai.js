@@ -4,10 +4,86 @@ import { google } from "@ai-sdk/google";
 // 📘 generateText (not streamText): both tips are generated ONCE and cached in
 // Postgres, then re-read forever. Streaming only improves UX when a human is
 // watching tokens arrive (chat UIs — that's where useChat/streamText shine).
-const model = google("gemini-3.6-flash");
+// Primary model first. The Gemini FREE tier caps requests PER DAY PER MODEL
+// (20/day on each), so when the primary answers 429 RESOURCE_EXHAUSTED we
+// retry the same prompt on the next sibling — every cached one-shot below
+// goes through generate(), so none of them needs to know about this.
+const MODEL_IDS = [
+  "gemini-3.6-flash",
+  "gemini-3.7-flash",
+  "gemini-3.5-flash",
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+];
+const model = google(MODEL_IDS[0]);
 // Exported for the chat route — the one place we DO stream (a human is
 // watching tokens arrive), unlike the cached one-shot tips below.
 export { model as chatModel };
+
+// Transient provider errors worth trying the NEXT model for: 429 (quota /
+// rate limit) and 500/503 (Google's "model is experiencing high demand" —
+// overload is per model too). The AI SDK may wrap the APICallError in a
+// RetryError whose .lastError carries the status, so look at both.
+function isTransientError(err) {
+  const inner = err?.lastError ?? err;
+  return (
+    [429, 500, 503].includes(inner?.statusCode) ||
+    /RESOURCE_EXHAUSTED|UNAVAILABLE|high demand|exceeded your current quota/i.test(
+      err?.message ?? "",
+    )
+  );
+}
+
+// Remember which models just failed so the next call skips straight to a
+// working one instead of paying a slow 429 on every request (in-memory, per
+// server instance — a restart simply re-probes).
+const MODEL_COOLDOWN_MS = 10 * 60 * 1000;
+const modelUnavailableUntil = new Map(); // model id → timestamp
+
+// generateText with model fallback. `maxRetries: 1` per model: a daily cap
+// or an overloaded model won't clear by hammering it, so move on quickly.
+async function generate(opts) {
+  const now = Date.now();
+  const healthy = MODEL_IDS.filter(
+    (id) => (modelUnavailableUntil.get(id) ?? 0) <= now,
+  );
+  // if every model is on cooldown, probe them all again rather than give up
+  const candidates = healthy.length ? healthy : MODEL_IDS;
+  let lastErr;
+  for (const id of candidates) {
+    try {
+      return await generateText({ model: google(id), maxRetries: 1, ...opts });
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientError(err)) throw err; // a real error — don't mask it
+      modelUnavailableUntil.set(id, Date.now() + MODEL_COOLDOWN_MS);
+      console.warn(
+        `[ai] ${id} unavailable (${(err.lastError ?? err).statusCode ?? "?"}), falling back to next model`,
+      );
+    }
+  }
+  throw lastErr;
+}
+
+// 📘 "DB first, AI once, keep the last good data" — the contract every cached
+// AI feature follows (tips, trends, market pulse, picks, digests):
+//   1. stored + fresh  → serve from Postgres, no AI call
+//   2. stored + stale  → try ONE refresh; on failure serve the stored data
+//   3. nothing stored  → try once; on failure show nothing (never fabricate)
+// After a failed refresh we don't re-hit Gemini on every visit: callers mark
+// the feature key failed and skip AI for a while (the visitor gets the stored
+// data instantly instead of waiting on a call that will 429 again).
+const REFRESH_COOLDOWN_MS = 15 * 60 * 1000;
+const refreshFailedAt = new Map(); // feature key → timestamp
+export function recentlyFailed(key) {
+  return Date.now() - (refreshFailedAt.get(key) ?? 0) < REFRESH_COOLDOWN_MS;
+}
+export function markFailed(key) {
+  refreshFailedAt.set(key, Date.now());
+}
+export function clearFailed(key) {
+  refreshFailedAt.delete(key);
+}
 
 // True once the user replaced the ".env.local" placeholder with a real key.
 export function hasGeminiKey() {
@@ -15,9 +91,31 @@ export function hasGeminiKey() {
   return Boolean(key) && !key.startsWith("your-");
 }
 
+// 📘 Gemini has no clock. Any prompt that says "now", "currently" or "this
+// month" must be told the date, or the model guesses (the market-pulse chart
+// once ended at "Apr" in August). Everything is anchored to India time.
+const IST_MONTH_YEAR = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  month: "long",
+  year: "numeric",
+});
+const IST_MONTH_SHORT = new Intl.DateTimeFormat("en-IN", {
+  timeZone: "Asia/Kolkata",
+  month: "short",
+});
+export const currentIndiaDate = (d = new Date()) => IST_MONTH_YEAR.format(d); // "August 2026"
+// ["Mar","Apr","May","Jun","Jul","Aug"] — oldest first, ending this month
+export function lastSixMonthLabels(d = new Date()) {
+  const labels = [];
+  for (let i = 5; i >= 0; i--) {
+    const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 15));
+    labels.push(IST_MONTH_SHORT.format(dt));
+  }
+  return labels;
+}
+
 export async function generateProductTip(product) {
-  const { text } = await generateText({
-    model,
+  const { text } = await generate({
     prompt: `Write one practical, friendly 1-2 sentence tip for someone buying or using this product. No preamble, no markdown.
 Product: ${product.name}
 Category: ${product.category}
@@ -27,8 +125,7 @@ Description: ${product.description || "n/a"}`,
 }
 
 export async function generateSearchTip(term) {
-  const { text } = await generateText({
-    model,
+  const { text } = await generate({
     prompt: `A visitor searched a product board for "${term}". Write one helpful 1-2 sentence quick tip related to "${term}" (e.g. for "dumbbell", a short exercise tip). No preamble, no markdown.`,
   });
   return text.trim();
@@ -42,12 +139,9 @@ export async function generateSearchTip(term) {
 // 📘 Returns { summary, sources: [{ title, url }] }. Cached by callers
 // (products.review_digest / search_digests) so it runs once per subject.
 export async function generateReviewDigest(subject) {
-  const result = await generateText({
-    model,
+  const result = await generate({
     // the tool MUST be named google_search for Gemini grounding
     tools: { google_search: google.tools.googleSearch({}) },
-    // a quota-blocked key fails fast instead of stalling approval on retries
-    maxRetries: 1,
     prompt: `Using Google Search, summarize in 2-4 plain-text sentences what buyers commonly say about "${subject}": the most common praise and the most common complaints. No markdown, no bullet lists, no invented specifics, and do not present anything as a direct quote or testimonial.`,
   });
 
@@ -74,7 +168,9 @@ export async function generateReviewDigest(subject) {
 
   const summary = result.text.trim();
   if (!summary || !sources.length) {
-    throw new Error("No grounded sources returned — refusing to store an ungrounded digest");
+    throw new Error(
+      "No grounded sources returned — refusing to store an ungrounded digest",
+    );
   }
   return { summary, sources };
 }
@@ -83,14 +179,16 @@ export async function generateReviewDigest(subject) {
 // Returns [{name, category, reason}] or throws; the caller caches the result
 // in the ai_trends table so this runs at most once a week.
 export async function generateTrendingPicks(categories) {
-  const { text } = await generateText({
-    model,
-    prompt: `List 6 consumer products that are trending in the Indian market right now.
+  const { text } = await generate({
+    prompt: `Today is ${currentIndiaDate()}. List 6 consumer products that are trending in the Indian market right now.
 Respond with ONLY a JSON array (no markdown fences, no prose). Each element:
 {"name": "<short product name>", "category": "<one of: ${categories.join(", ")}>", "reason": "<one sentence on why it's trending>"}`,
   });
   // the model occasionally wraps JSON in ``` fences — strip before parsing
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "");
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/, "");
   const items = JSON.parse(cleaned);
   if (!Array.isArray(items)) throw new Error("AI returned non-array");
   return items
@@ -110,13 +208,15 @@ Respond with ONLY a JSON array (no markdown fences, no prose). Each element:
 // `count` = how many picks to ask for (6 for searches, 10 for the board's
 // preset "Top picks in India" topics).
 export async function generateShoppingPicks(term, categories, count = 6) {
-  const { text } = await generateText({
-    model,
-    prompt: `A shopper in India searched for "${term}". List ${Math.max(4, count - 2)} to ${count} real, well-known, currently available products that match this search.
+  const { text } = await generate({
+    prompt: `Today is ${currentIndiaDate()}. A shopper in India searched for "${term}". List ${Math.max(4, count - 2)} to ${count} real, well-known, currently available products that match this search.
 Respond with ONLY a JSON array (no markdown fences, no prose). Each element:
 {"name": "<exact product name incl. model>", "brand": "<brand>", "priceHint": "<typical Indian street price range in INR, e.g. ₹35,000–45,000>", "category": "<one of: ${categories.join(", ")}, Other>", "reason": "<one sentence on who it's best for>"}`,
   });
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "");
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/, "");
   const items = JSON.parse(cleaned);
   if (!Array.isArray(items)) throw new Error("AI returned non-array");
   const picks = items
@@ -141,25 +241,33 @@ Respond with ONLY a JSON array (no markdown fences, no prose). Each element:
 const clamp100 = (n) => Math.max(0, Math.min(100, Math.round(Number(n) || 0)));
 
 export async function generateMarketInsights(categories) {
-  const { text } = await generateText({
-    model,
-    prompt: `You are a retail market analyst for India. Give your best ESTIMATES of current consumer buying interest for these product categories: ${categories.join(", ")}.
+  const months = lastSixMonthLabels(); // computed by us, not guessed by the model
+  const { text } = await generate({
+    prompt: `Today is ${currentIndiaDate()}. You are a retail market analyst for India. Give your best ESTIMATES of current consumer buying interest for these product categories: ${categories.join(", ")}.
 Respond with ONLY a JSON object (no markdown fences, no prose) of this exact shape:
 {"demand":[{"category":"<one of the categories>","score":<integer 0-100, relative buying interest this month>}],
- "trend":[{"month":"<short month name, e.g. Mar>","index":<integer 0-100>}],
+ "trend":[{"month":"<month label>","index":<integer 0-100>}],
  "highlights":[{"label":"<short stat label>","value":"<short value, e.g. Fitness or +18%>","note":"<one short sentence>"}]}
-Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6 entries — overall consumer-product buying interest for the last 6 months ending this month, oldest first. "highlights" has exactly 4 entries (e.g. fastest-growing category, busiest shopping month, most searched category, peak discount season).`,
+Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6 entries — overall consumer-product buying interest in India for these months, in this exact order (oldest first, ending this month): ${months.join(", ")}. "highlights" has exactly 4 entries (e.g. fastest-growing category, busiest shopping month, most searched category, peak discount season) relevant to ${currentIndiaDate()}.`,
   });
-  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/, "");
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/, "");
   const raw = JSON.parse(cleaned);
 
   const demand = (Array.isArray(raw.demand) ? raw.demand : [])
     .filter((d) => d && typeof d.category === "string")
     .map((d) => ({ category: d.category, score: clamp100(d.score) }));
-  const trend = (Array.isArray(raw.trend) ? raw.trend : [])
-    .filter((t) => t && typeof t.month === "string")
-    .slice(0, 12)
-    .map((t) => ({ month: t.month, index: clamp100(t.index) }));
+  // Month labels are OURS: relabel positionally (last entry = this month) so
+  // the chart's x-axis is always right even if the model mislabels.
+  const rawTrend = (Array.isArray(raw.trend) ? raw.trend : [])
+    .filter((t) => t && t.index !== undefined)
+    .slice(-6);
+  const trend = rawTrend.map((t, i) => ({
+    month: months[months.length - rawTrend.length + i],
+    index: clamp100(t.index),
+  }));
   const highlights = (Array.isArray(raw.highlights) ? raw.highlights : [])
     .filter((h) => h && typeof h.label === "string")
     .slice(0, 4)
@@ -170,5 +278,7 @@ Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6
     }));
 
   if (!demand.length) throw new Error("AI market insights missing demand data");
-  return { demand, trend, highlights };
+  // `categories` = the admin list this payload was generated FOR — the board
+  // compares it with the current list and regenerates when categories change.
+  return { demand, trend, highlights, categories: [...categories] };
 }

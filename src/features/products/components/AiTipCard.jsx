@@ -1,0 +1,57 @@
+import { Card } from "@/components/ui";
+import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  generateProductTip,
+  hasGeminiKey,
+  recentlyFailed,
+  markFailed,
+  clearFailed,
+} from "@/lib/ai";
+
+// The "AI tip" card on a product page.
+//
+// 📘 Async SERVER component. The tip is normally generated ONCE when the
+// admin approves the product and stored in products.ai_tip — a plain column
+// read. But if Gemini was unavailable at approval time (daily free quota),
+// the column is null. Instead of leaving the product tip-less forever, the
+// first visitor triggers one backfill here; the result is written to the DB
+// so every later visit is a read again ("DB first, AI once"). If Gemini is
+// still down we render nothing and won't retry for a while (cooldown) — so
+// the page never stalls on a call that will fail again.
+//
+// Render it inside <Suspense>: the rest of the page streams to the browser
+// immediately and this card pops in when ready (only on that first visit).
+export default async function AiTipCard({ product, className = "" }) {
+  let tip = product.ai_tip ?? null;
+
+  if (
+    !tip &&
+    hasGeminiKey() &&
+    !recentlyFailed(`tip:product:${product.id}`) &&
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  ) {
+    try {
+      tip = await generateProductTip(product);
+      await createAdminClient()
+        .from("products")
+        .update({ ai_tip: tip })
+        .eq("id", product.id);
+      clearFailed(`tip:product:${product.id}`);
+    } catch (err) {
+      console.error("AI tip backfill failed:", err.message);
+      markFailed(`tip:product:${product.id}`);
+      tip = null;
+    }
+  }
+
+  if (!tip) return null;
+  return (
+    <Card className={`flex items-start gap-3 border-l-4 border-l-accent ${className}`}>
+      <i className="uil uil-robot mt-0.5 text-xl text-accent" />
+      <div>
+        <div className="mb-1 text-sm font-semibold text-title">AI tip</div>
+        <p className="text-sm text-body">{tip}</p>
+      </div>
+    </Card>
+  );
+}
