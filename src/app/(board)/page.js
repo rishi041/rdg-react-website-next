@@ -15,6 +15,7 @@ import {
   recentlyFailed,
   markFailed,
   clearFailed,
+  singleFlight,
 } from "@/lib/ai";
 import ChatWidget from "@/features/products/components/ChatWidget";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -46,20 +47,31 @@ export const dynamic = "force-dynamic";
 // so the board never waits on a call that will fail again.
 async function getAiTrendsWithRefresh(categoryNames) {
   const cached = await getAiTrends();
-  if (!cached.stale || !hasGeminiKey() || recentlyFailed("ai_trends")) {
+  if (
+    !cached.stale ||
+    !hasGeminiKey() ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    recentlyFailed("ai_trends")
+  ) {
     return cached;
   }
   try {
-    const fresh = await generateTrendingPicks(
-      categoryNames.length ? categoryNames : ["Other"],
-    );
-    await createAdminClient().from("ai_trends").insert({ items: fresh });
-    clearFailed("ai_trends");
-    return {
-      items: fresh,
-      stale: false,
-      generatedAt: new Date().toISOString(),
-    };
+    // singleFlight: concurrent visitors share ONE generation
+    return await singleFlight("ai_trends", async () => {
+      const fresh = await generateTrendingPicks(
+        categoryNames.length ? categoryNames : ["Other"],
+      );
+      const { error } = await createAdminClient()
+        .from("ai_trends")
+        .insert({ items: fresh });
+      if (error) throw new Error(`ai_trends insert failed: ${error.message}`);
+      clearFailed("ai_trends");
+      return {
+        items: fresh,
+        stale: false,
+        generatedAt: new Date().toISOString(),
+      };
+    });
   } catch (err) {
     console.error("AI trends refresh failed:", err.message);
     markFailed("ai_trends");
@@ -77,27 +89,37 @@ const sameSet = (a = [], b = []) =>
 
 async function getAiInsightsWithRefresh(categoryNames) {
   const cached = await getAiInsights();
+  // the list we generate FOR (and compare against) — same fallback in both
+  // places, otherwise an empty category list would regenerate on every visit
+  const cats = categoryNames.length ? categoryNames : ["Other"];
   const generatedFor =
     cached.data?.categories ??
     cached.data?.demand?.map((d) => d.category) ??
     [];
-  const categoriesChanged =
-    Boolean(cached.data) && !sameSet(generatedFor, categoryNames);
+  const categoriesChanged = Boolean(cached.data) && !sameSet(generatedFor, cats);
   // payloads from before highlights were per-category get refreshed once
   const oldShape =
-    Boolean(cached.data) && !(cached.data.highlights ?? []).every((h) => h.category);
+    Boolean(cached.data) &&
+    !(cached.data.highlights ?? []).every((h) => h.category);
   const needsRefresh = cached.stale || categoriesChanged || oldShape;
   if (!needsRefresh) return cached;
-  if (!hasGeminiKey() || recentlyFailed("ai_insights")) {
+  if (
+    !hasGeminiKey() ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    recentlyFailed("ai_insights")
+  ) {
     return { ...cached, stale: true }; // keep showing the last payload
   }
   try {
-    const fresh = await generateMarketInsights(
-      categoryNames.length ? categoryNames : ["Other"],
-    );
-    await createAdminClient().from("ai_insights").insert({ data: fresh });
-    clearFailed("ai_insights");
-    return { data: fresh, stale: false, generatedAt: new Date().toISOString() };
+    return await singleFlight("ai_insights", async () => {
+      const fresh = await generateMarketInsights(cats);
+      const { error } = await createAdminClient()
+        .from("ai_insights")
+        .insert({ data: fresh });
+      if (error) throw new Error(`ai_insights insert failed: ${error.message}`);
+      clearFailed("ai_insights");
+      return { data: fresh, stale: false, generatedAt: new Date().toISOString() };
+    });
   } catch (err) {
     console.error("AI insights refresh failed:", err.message);
     markFailed("ai_insights");
@@ -107,7 +129,11 @@ async function getAiInsightsWithRefresh(categoryNames) {
 
 export default async function HomePage({ searchParams }) {
   // 📘 Next 15+: searchParams is a Promise — await it.
-  const { q = "", category = "" } = await searchParams;
+  const sp = await searchParams;
+  // ?q=a&q=b arrives as an array — take a single string for both params
+  const one = (v) => (Array.isArray(v) ? (v[0] ?? "") : (v ?? ""));
+  const q = one(sp.q).slice(0, 100);
+  const category = one(sp.category);
   const isFiltering = Boolean(q || category);
 
   const [products, categories] = await Promise.all([

@@ -25,8 +25,10 @@ async function getAuthedClient() {
 }
 
 function refresh() {
-  // 📘 Server Components cache their rendered output — tell Next these pages
-  // changed so the next visit shows fresh data. The board lives at "/" now.
+  // 📘 The board/admin pages are force-dynamic, so the server always renders
+  // fresh data; revalidatePath here mainly busts the client Router Cache so
+  // in-app navigations don't show stale pages. (/products/[id] is dynamic too,
+  // so edits show there on the next visit without listing it.)
   revalidatePath("/");
   revalidatePath("/admin");
 }
@@ -34,16 +36,26 @@ function refresh() {
 export async function approveProduct(id) {
   const supabase = await getAuthedClient();
   // 📘 Approval is a plain, instant DB update. The AI extras are NOT generated
-  // here any more (they made "Approve" wait 20-40s on Gemini):
-  //   - the AI tip is back-filled once on the product's first page view by
+  // here (they made "Approve" wait 20-40s on Gemini):
+  //   - the AI tip is generated once on the product's first page view by
   //     AiTipCard (Suspense-streamed, then stored on the row),
   //   - the grounded buyer summary is generated on demand via the admin
   //     "Generate buyer summary" button (needs grounding quota anyway).
-  // Same "DB first, AI once" contract, but approval never blocks on AI.
+  // Reset everything a visitor could have pre-filled on the pending row
+  // (RLS also blocks it on insert — belt and braces): counters start at zero
+  // and AI fields start empty, so nothing fabricated goes live.
   const { error } = await supabase
     .from("products")
-    .update({ status: "approved" })
-    .eq("id", id);
+    .update({
+      status: "approved",
+      clicks: 0,
+      views: 0,
+      ai_tip: null,
+      review_digest: null,
+      review_sources: null,
+    })
+    .eq("id", id)
+    .eq("status", "pending");
   if (error) throw new Error(error.message);
   refresh();
 }
@@ -154,7 +166,11 @@ export async function regenerateAiTrends() {
   const { error } = await admin.from("ai_trends").insert({ items });
   if (error) throw new Error(error.message);
   if (insightsResult.status === "fulfilled") {
-    await admin.from("ai_insights").insert({ data: insightsResult.value });
+    const { error: insightsError } = await admin
+      .from("ai_insights")
+      .insert({ data: insightsResult.value });
+    if (insightsError)
+      console.error("ai_insights insert failed:", insightsError.message);
   } else {
     console.error("AI market pulse refresh failed:", insightsResult.reason?.message);
   }

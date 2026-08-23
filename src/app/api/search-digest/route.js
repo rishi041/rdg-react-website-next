@@ -37,9 +37,10 @@ export async function GET(request) {
   try {
     const { summary, sources } = await generateReviewDigest(term);
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      await createAdminClient()
+      const { error } = await createAdminClient()
         .from("search_digests")
         .upsert({ term, summary, sources });
+      if (error) throw new Error(`search_digests upsert failed: ${error.message}`);
     }
     return NextResponse.json({ summary, sources, cached: false });
   } catch (err) {

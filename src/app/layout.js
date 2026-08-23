@@ -20,9 +20,10 @@ const hueInitScript = `
 `;
 
 /*
- * Pre-paint dark theme: Header.jsx applies body.dark-theme in a useEffect (after
- * hydration), which would flash the light theme for dark-mode users on every
- * page load. This script restores the saved theme before the page paints.
+ * Pre-paint dark theme: BoardHeader (and the portfolio's original Header)
+ * apply body.dark-theme in a useEffect (after hydration), which would flash the
+ * light theme for dark-mode users on every page load. This script restores the
+ * saved theme before the page paints.
  */
 const themeInitScript = `
   try {

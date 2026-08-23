@@ -82,7 +82,7 @@
 
 /*
  * Make Tailwind's `dark:` variant follow the EXISTING portfolio theme toggle,
- * which adds the `dark-theme` class to <body> (see Header.jsx). New pages get
+ * which adds the `dark-theme` class to <body> (see BoardHeader.jsx). New pages get
  * dark mode for free from the same button.
  */
 @custom-variant dark (&:where(body.dark-theme *, body.dark-theme));

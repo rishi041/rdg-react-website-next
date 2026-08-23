@@ -68,13 +68,11 @@ export default function BoardHeader({ brand = "board" }) {
       onClick={() => setIsDark((v) => !v)}
       className="flex cursor-pointer items-center border-none bg-transparent text-xl text-title transition-colors hover:text-accent"
     >
-      {/* 📘 the server can't read localStorage, so it always renders the
-          moon; a dark-mode browser hydrates with the sun. That one-off
-          difference is expected — suppress it on just this element. */}
-      <i
-        suppressHydrationWarning
-        className={`uil ${isDark ? "uil-sun" : "uil-moon"}`}
-      />
+      {/* 📘 the server can't read localStorage, so it can't know which icon
+          to render. Render BOTH and let CSS pick via body.dark-theme (the
+          `dark:` variant) — no hydration mismatch, correct from first paint. */}
+      <i className="uil uil-moon dark:hidden" />
+      <i className="uil uil-sun hidden dark:inline" />
     </button>
   );
 

@@ -6,7 +6,7 @@ import { addCategory, deleteCategory } from "../actions";
 import { Button, Input, Card } from "@/components/ui";
 
 // Manage the category list that drives the board chips and the suggest form.
-// 📘 Client component calling Server Actions — same pattern as PendingQueue.
+// 📘 Client component calling Server Actions — same pattern as ProductQueue.
 export default function CategoryManager({ categories }) {
   const router = useRouter();
   const [name, setName] = useState("");

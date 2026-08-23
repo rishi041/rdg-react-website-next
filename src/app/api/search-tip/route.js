@@ -48,7 +48,13 @@ export async function GET(request) {
   if (tip && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     const admin = createAdminClient();
     // upsert: two visitors racing on the same new term is fine
-    await admin.from("search_tips").upsert({ term, tip });
+    const { error } = await admin.from("search_tips").upsert({ term, tip });
+    if (error) {
+      // the tip is still returned, but without the cache the next visit would
+      // pay again — log loudly and back off like a generation failure
+      console.error("search_tips upsert failed:", error.message);
+      markFailed(`tip:${term}`);
+    }
   }
 
   return NextResponse.json({ tip, cached: false });

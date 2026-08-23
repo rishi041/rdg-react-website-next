@@ -179,6 +179,7 @@ export default function ChatWidget() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask something…"
+              aria-label="Message the shopping assistant"
               className="min-w-0 flex-1 rounded-lg border border-solid border-line bg-field px-4 py-2.5 text-base text-title outline-none placeholder:text-body-light focus:border-accent"
             />
             {isBusy ? (
@@ -192,6 +193,7 @@ export default function ChatWidget() {
             ) : (
               <button
                 type="submit"
+                aria-label="Send message"
                 disabled={!input.trim()}
                 className="cursor-pointer rounded-lg border-none bg-accent px-4 py-2.5 text-base text-white transition-colors hover:bg-accent-alt disabled:cursor-not-allowed disabled:opacity-40"
               >

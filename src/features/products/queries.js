@@ -15,7 +15,10 @@ export async function getApprovedProducts({ q, category } = {}) {
     .eq("status", "approved")
     .order("submitted_at", { ascending: false });
 
-  if (q) query = query.or(`name.ilike.%${q}%,description.ilike.%${q}%`);
+  // PostgREST parses the .or() filter string: commas/parens/quotes in the
+  // user's text would break it (and 500 the page) — neutralise them
+  const safeQ = String(q ?? "").replace(/[,()"\\]/g, " ").trim();
+  if (safeQ) query = query.or(`name.ilike.%${safeQ}%,description.ilike.%${safeQ}%`);
   if (category) query = query.eq("category", category);
 
   const { data, error } = await query;

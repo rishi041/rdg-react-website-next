@@ -39,8 +39,9 @@ async function uploadImage(file) {
 //   mode="pending"  → Approve / Reject / Edit actions
 //   mode="approved" → Edit / Unpublish actions + clicks/views stats
 // 📘 Client component calling Server Actions directly — no fetch(), no API
-// route. useTransition gives a pending flag while the action runs on the
-// server; router.refresh() then refetches the revalidated dashboard data.
+// route. Button state follows the action's promise; the list is patched
+// optimistically and router.refresh() (in a transition) re-syncs it with the
+// server afterwards.
 export default function ProductQueue({
   items,
   categories = [],
@@ -110,15 +111,16 @@ export default function ProductQueue({
     try {
       await action();
       apply?.();
+      setEditingId((cur) => (cur === id ? null : cur)); // close this card's form on success only
       startTransition(() => router.refresh());
     } catch (err) {
       console.error(err);
       // server actions throw readable messages (e.g. grounding quota) —
-      // surface them instead of a generic failure
+      // surface them instead of a generic failure; an open edit form stays
+      // open so the admin can correct and retry
       alert(err?.message || "Action failed — check the console.");
     } finally {
       setBusyId(null);
-      setEditingId(null);
     }
   };
   const removeLocal = (id) => setList((l) => l.filter((p) => p.id !== id));

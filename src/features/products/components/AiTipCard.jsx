@@ -10,14 +10,12 @@ import {
 
 // The "AI tip" card on a product page.
 //
-// 📘 Async SERVER component. The tip is normally generated ONCE when the
-// admin approves the product and stored in products.ai_tip — a plain column
-// read. But if Gemini was unavailable at approval time (daily free quota),
-// the column is null. Instead of leaving the product tip-less forever, the
-// first visitor triggers one backfill here; the result is written to the DB
+// 📘 Async SERVER component. products.ai_tip is a plain column read; when it
+// is null (approval never calls Gemini — see approveProduct), the FIRST
+// visitor triggers one generation here and the result is written to the DB,
 // so every later visit is a read again ("DB first, AI once"). If Gemini is
-// still down we render nothing and won't retry for a while (cooldown) — so
-// the page never stalls on a call that will fail again.
+// down we render nothing and won't retry for a while (cooldown) — so the
+// page never stalls on a call that will fail again.
 //
 // Render it inside <Suspense>: the rest of the page streams to the browser
 // immediately and this card pops in when ready (only on that first visit).
@@ -32,10 +30,11 @@ export default async function AiTipCard({ product, className = "" }) {
   ) {
     try {
       tip = await generateProductTip(product);
-      await createAdminClient()
+      const { error } = await createAdminClient()
         .from("products")
         .update({ ai_tip: tip })
         .eq("id", product.id);
+      if (error) throw new Error(`ai_tip update failed: ${error.message}`);
       clearFailed(`tip:product:${product.id}`);
     } catch (err) {
       console.error("AI tip backfill failed:", err.message);

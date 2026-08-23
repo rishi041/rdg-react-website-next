@@ -1,3 +1,4 @@
+-- Mirror of ../schema.sql (keep in sync). Applied locally by `supabase db reset`.
 -- OnGoodPicks — full schema. Safe to run (and re-run) in the Supabase SQL editor;
 -- mirrored in supabase/migrations/ for `supabase db reset` locally.
 -- Prerequisites (Dashboard):

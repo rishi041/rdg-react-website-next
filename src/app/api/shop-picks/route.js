@@ -35,10 +35,13 @@ import {
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const topic = getTopic(searchParams.get("topic") ?? "");
-  // 📘 the topic KEY is public; the prompt text behind it stays server-side
+  // what we ask Gemini for
   const term = topic
     ? topic.term
     : (searchParams.get("term") ?? "").trim().toLowerCase();
+  // what we store it under — topics get their own key so a visitor searching
+  // the exact topic phrase can never overwrite/shadow the 10-item topic list
+  const cacheKey = topic ? `topic:${topic.key}` : term;
   const count = topic ? TOPIC_PICK_COUNT : 6;
 
   if (term.length < 2 || term.length > 60 || !isSupabaseConfigured()) {
@@ -49,7 +52,7 @@ export async function GET(request) {
   const { data: cached } = await supabase
     .from("search_picks")
     .select("items, created_at")
-    .eq("term", term)
+    .eq("term", cacheKey)
     .maybeSingle();
 
   // searched terms never expire; topics are fresh only for today (IST)
@@ -63,7 +66,7 @@ export async function GET(request) {
   }
 
   // Stale/missing. Can we (and should we) ask Gemini right now?
-  if (!hasGeminiKey() || recentlyFailed(`picks:${term}`)) {
+  if (!hasGeminiKey() || recentlyFailed(`picks:${cacheKey}`)) {
     return NextResponse.json(
       stored ? { ...stored, cached: true, stale: true } : { items: null }
     );
@@ -78,11 +81,12 @@ export async function GET(request) {
     );
     const now = new Date().toISOString();
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      await createAdminClient()
+      const { error } = await createAdminClient()
         .from("search_picks")
-        .upsert({ term, items, created_at: now });
+        .upsert({ term: cacheKey, items, created_at: now });
+      if (error) throw new Error(`search_picks upsert failed: ${error.message}`);
     }
-    clearFailed(`picks:${term}`);
+    clearFailed(`picks:${cacheKey}`);
     return NextResponse.json({
       items,
       generatedAt: now,
@@ -91,7 +95,7 @@ export async function GET(request) {
     });
   } catch (err) {
     console.error("shop-picks generation failed:", err.message);
-    markFailed(`picks:${term}`); // never cache failures in the DB
+    markFailed(`picks:${cacheKey}`); // never cache failures in the DB
     return NextResponse.json(
       stored ? { ...stored, cached: true, stale: true } : { items: null }
     );

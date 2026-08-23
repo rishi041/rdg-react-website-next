@@ -1,7 +1,7 @@
 // Preset "Top picks in India" topics shown on the main board (no search
-// needed). Shared by the server route (which term to ask Gemini for + daily
-// TTL) and the client tabs (labels). Keys are what travel in the URL
-// (/api/shop-picks?topic=trending-today) — never the raw prompt text.
+// needed). Shared by the server route (which term to ask Gemini for, cache
+// key, daily freshness) and the client tabs (labels + "see all" link). Keys
+// are what travel in the URL (/api/shop-picks?topic=trending-today).
 export const PICK_TOPICS = [
   {
     key: "trending-today",

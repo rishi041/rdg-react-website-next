@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, cache } from "react";
 import { notFound } from "next/navigation";
 import {
   getProductById,
@@ -18,16 +18,20 @@ import { Badge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
 
+// 📘 React cache(): generateMetadata and the page both need the product —
+// dedupe to ONE query per request
+const loadProduct = cache(getProductById);
+
 export async function generateMetadata({ params }) {
   const { id } = await params;
-  const product = await getProductById(id);
+  const product = await loadProduct(id);
   return { title: product ? product.name : "Product" };
 }
 
 export default async function ProductDetailPage({ params }) {
   // 📘 Next 15+: params is a Promise too.
   const { id } = await params;
-  const product = await getProductById(id);
+  const product = await loadProduct(id);
   if (!product) notFound(); // RLS already hides non-approved rows from anon
 
   const [related, categories] = await Promise.all([
@@ -74,17 +78,17 @@ export default async function ProductDetailPage({ params }) {
               <div className="mt-2">
                 <BuyNowButton product={product} />
               </div>
-              {/* 📘 ai_tip is normally a plain column read (generated once at
-                  approval). If it's missing (Gemini was out of quota then),
-                  AiTipCard backfills it ONCE and stores it — inside Suspense
-                  so the page streams immediately and the card pops in. */}
+              {/* 📘 ai_tip is a plain column read once it exists; on the
+                  first view AiTipCard generates it ONCE and stores it —
+                  inside Suspense so the page streams immediately and the
+                  card pops in. */}
               <Suspense fallback={null}>
                 <AiTipCard product={product} className="mt-4" />
               </Suspense>
-              {/* 📘 Grounded digest: generated once at approval (or via the
-                  admin "Generate buyer summary" button) with Google Search
-                  grounding and cached on the row — plain column read here.
-                  Renders nothing unless it has real sources. */}
+              {/* 📘 Grounded digest: generated on demand via the admin
+                  "Generate buyer summary" button (Google Search grounding)
+                  and cached on the row — plain column read here. Renders
+                  nothing unless it has real sources. */}
               <ReviewDigestCard
                 summary={product.review_digest}
                 sources={product.review_sources}

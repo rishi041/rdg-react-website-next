@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Input, Chip } from "@/components/ui";
 
@@ -18,6 +18,8 @@ export default function SearchFilterBar({ categories = [] }) {
   const [text, setText] = useState(activeQ);
   const [lastQ, setLastQ] = useState(activeQ);
   const debounceRef = useRef(null);
+  // don't fire a pending navigation after unmount (e.g. user clicked away)
+  useEffect(() => () => clearTimeout(debounceRef.current), []);
 
   // keep the input in sync when the URL changes via back/forward
   // 📘 "adjust state during render" — React's recommended pattern for deriving

@@ -16,7 +16,37 @@ export async function POST(req) {
 
   // useChat POSTs the full message history as UIMessages on every turn —
   // the server is stateless, no conversation is stored anywhere.
-  const { messages } = await req.json();
+  // Validate the shape: it's a public endpoint, so cap size and keep only
+  // text parts (no files/tool parts are ever forwarded to Gemini).
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return new Response("Bad request", { status: 400 });
+  }
+  if (!Array.isArray(body?.messages)) {
+    return new Response("Bad request", { status: 400 });
+  }
+  const MAX_MESSAGES = 30;
+  const MAX_CHARS = 8000;
+  let budget = MAX_CHARS;
+  const messages = body.messages
+    .slice(-MAX_MESSAGES)
+    .filter((m) => m && (m.role === "user" || m.role === "assistant"))
+    .map((m) => ({
+      ...m,
+      parts: (Array.isArray(m.parts) ? m.parts : [])
+        .filter((p) => p?.type === "text" && typeof p.text === "string")
+        .map((p) => {
+          const text = p.text.slice(0, Math.max(0, budget));
+          budget -= text.length;
+          return { type: "text", text };
+        }),
+    }))
+    .filter((m) => m.parts.length > 0);
+  if (!messages.length) {
+    return new Response("Bad request", { status: 400 });
+  }
 
   // Ground the assistant in the REAL board: fetch the approved products on
   // every request so new approvals are instantly part of its knowledge.

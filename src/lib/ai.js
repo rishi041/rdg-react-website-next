@@ -15,10 +15,6 @@ const MODEL_IDS = [
   "gemini-3.5-flash-lite",
   "gemini-3.1-flash-lite",
 ];
-const model = google(MODEL_IDS[0]);
-// Exported for the chat route — the one place we DO stream (a human is
-// watching tokens arrive), unlike the cached one-shot tips below.
-export { model as chatModel };
 
 // Transient provider errors worth trying the NEXT model for: 429 (quota /
 // rate limit) and 500/503 (Google's "model is experiencing high demand" —
@@ -135,6 +131,19 @@ export function clearFailed(key) {
   refreshFailedAt.delete(key);
 }
 
+// Single-flight: when several visitors hit a stale cache at the same moment,
+// only ONE Gemini call runs — the others await the same promise (in-memory,
+// per server instance). Use around any "refresh the cache" generation.
+const inFlight = new Map(); // key → Promise
+export function singleFlight(key, fn) {
+  if (inFlight.has(key)) return inFlight.get(key);
+  const p = Promise.resolve()
+    .then(fn)
+    .finally(() => inFlight.delete(key));
+  inFlight.set(key, p);
+  return p;
+}
+
 // True once the user replaced the ".env.local" placeholder with a real key.
 export function hasGeminiKey() {
   const key = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -156,10 +165,22 @@ const IST_MONTH_SHORT = new Intl.DateTimeFormat("en-IN", {
 export const currentIndiaDate = (d = new Date()) => IST_MONTH_YEAR.format(d); // "August 2026"
 // ["Mar","Apr","May","Jun","Jul","Aug"] — oldest first, ending this month
 export function lastSixMonthLabels(d = new Date()) {
+  // year/month in IST (not UTC) so the last label is the same month the
+  // prompt's "Today is …" says, even around midnight boundaries
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "numeric",
+    })
+      .formatToParts(d)
+      .map((x) => [x.type, x.value]),
+  );
+  const year = Number(parts.year);
+  const month = Number(parts.month) - 1; // 0-based
   const labels = [];
   for (let i = 5; i >= 0; i--) {
-    const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 15));
-    labels.push(IST_MONTH_SHORT.format(dt));
+    labels.push(IST_MONTH_SHORT.format(new Date(Date.UTC(year, month - i, 15))));
   }
   return labels;
 }
@@ -328,7 +349,7 @@ Rules: "demand" has exactly one entry per category listed. "trend" has exactly 6
   const highlights = categories
     .map((c) => rawHighlights.find((h) => h.category.toLowerCase() === c.toLowerCase()))
     .filter(Boolean)
-    .map((h, i, arr) => ({
+    .map((h) => ({
       category: categories.find((c) => c.toLowerCase() === h.category.toLowerCase()) ?? h.category,
       label: typeof h.label === "string" ? h.label : "",
       value: String(h.value ?? ""),
