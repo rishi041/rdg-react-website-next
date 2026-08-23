@@ -59,10 +59,11 @@ export function Label({ className = "", children, ...props }) {
   );
 }
 
-export function Card({ className = "", children }) {
+export function Card({ className = "", children, ...rest }) {
   return (
     <div
       className={`rounded-xl border border-solid border-line/70 bg-surface p-5 shadow-sm ${className}`}
+      {...rest}
     >
       {children}
     </div>

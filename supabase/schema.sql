@@ -17,6 +17,10 @@ create table public.products (
   clicks int not null default 0,
   views int not null default 0,
   ai_tip text,
+  -- Google-Search-grounded "What buyers are saying" summary + its citations
+  -- [{title, url}]; both null when grounding wasn't available at approval
+  review_digest text,
+  review_sources jsonb,
   submitted_at timestamptz not null default now()
 );
 
@@ -93,6 +97,21 @@ create policy "admin manage categories" on public.categories
 insert into public.categories (name, hue) values
   ('Fitness',25),('Electronics',265),('Home',190),('Fashion',330),('Books',150),('Other',210);
 
+-- ============ Grounded buyer-sentiment digests per search term ============
+-- Same cache-first idea as search_tips, kept separate: different lifecycle
+-- (grounding can fail while the plain tip succeeds) and shape (summary +
+-- jsonb sources). Written by the server (service role) only.
+create table public.search_digests (
+  term text primary key,               -- stored lower(trim(term))
+  summary text not null,
+  sources jsonb not null,              -- [{title, url}]
+  created_at timestamptz not null default now()
+);
+alter table public.search_digests enable row level security;
+create policy "read digests" on public.search_digests
+  for select to anon, authenticated using (true);
+-- no insert policy: only the server writes it (service-role client)
+
 -- ============ AI trending cache (regenerated weekly, server-written) ============
 create table public.ai_trends (
   id uuid primary key default gen_random_uuid(),
@@ -101,5 +120,34 @@ create table public.ai_trends (
 );
 alter table public.ai_trends enable row level security;
 create policy "read ai trends" on public.ai_trends
+  for select to anon, authenticated using (true);
+-- no insert policy: only the server writes it (service-role client)
+
+-- ============ AI market pulse cache (weekly, server-written) ============
+-- Gemini ESTIMATES of buying interest per category + a 6-month index +
+-- 4 headline stats, shown on the board as charts. Clearly labeled estimates.
+create table public.ai_insights (
+  id uuid primary key default gen_random_uuid(),
+  data jsonb not null,                 -- {demand:[{category,score}], trend:[{month,index}], highlights:[{label,value,note}]}
+  generated_at timestamptz not null default now()
+);
+alter table public.ai_insights enable row level security;
+create policy "read ai insights" on public.ai_insights
+  for select to anon, authenticated using (true);
+-- no insert policy: only the server writes it (service-role client)
+
+-- ============ "Picks from the web" cache per search term ============
+-- When a search has no matches on the board, Gemini suggests real products
+-- for the term (each linking to Google Shopping search). Cache-first like
+-- search_tips: one AI call per term ever. Server-written (service role).
+-- Also holds the board's preset "Top picks in India" topics (rows keyed by
+-- the topic's prompt text, 10 items, refreshed daily via created_at).
+create table public.search_picks (
+  term text primary key,               -- stored lower(trim(term))
+  items jsonb not null,                -- [{name, brand, priceHint, category, reason}]
+  created_at timestamptz not null default now()
+);
+alter table public.search_picks enable row level security;
+create policy "read picks" on public.search_picks
   for select to anon, authenticated using (true);
 -- no insert policy: only the server writes it (service-role client)

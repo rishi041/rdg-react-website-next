@@ -45,11 +45,11 @@ export default function AiTrendsPanel({ generatedAt, itemCount, hasKey }) {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}{" "}
-                · {itemCount} picks · auto-refreshes weekly using your category
-                list
+                · {itemCount} picks + market pulse charts · auto-refresh weekly using
+                your category list
               </>
             ) : (
-              "No picks cached yet — generates from your category list, then auto-refreshes weekly."
+              "Nothing cached yet — generates AI picks + market pulse charts from your category list, then auto-refreshes weekly."
             )}
           </p>
         </div>

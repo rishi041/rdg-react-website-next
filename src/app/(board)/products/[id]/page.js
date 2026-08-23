@@ -10,6 +10,7 @@ import BuyNowButton from "@/features/products/components/BuyNowButton";
 import ViewTracker from "@/features/products/components/ViewTracker";
 import RelatedRow from "@/features/products/components/RelatedRow";
 import ChatWidget from "@/features/products/components/ChatWidget";
+import ReviewDigestCard from "@/features/products/components/ReviewDigestCard";
 import { hasGeminiKey } from "@/lib/ai";
 import { Badge, Card } from "@/components/ui";
 
@@ -82,6 +83,15 @@ export default async function ProductDetailPage({ params }) {
                   </div>
                 </Card>
               )}
+              {/* 📘 Grounded digest: generated once at approval (or via the
+                  admin "Generate buyer summary" button) with Google Search
+                  grounding and cached on the row — plain column read here.
+                  Renders nothing unless it has real sources. */}
+              <ReviewDigestCard
+                summary={product.review_digest}
+                sources={product.review_sources}
+                className="mt-2"
+              />
             </div>
           </div>
           <RelatedRow products={related} hues={hues} title="More in this category" />

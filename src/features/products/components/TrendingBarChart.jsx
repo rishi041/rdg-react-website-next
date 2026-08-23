@@ -7,23 +7,33 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  LabelList,
   ResponsiveContainer,
 } from "recharts";
 
-// 📘 recharts renders with browser APIs → must be a client component. The
-// server page fetches the data and passes a plain array down as a prop
-// (the standard "server fetch, client render" charting pattern).
-// Single series → single accent hue, no legend; labels use text tokens.
-export default function TrendingBarChart({ data }) {
+// Horizontal single-series bar chart (clicks per product, products per
+// category…). 📘 recharts needs browser APIs → client component; the server
+// page fetches and passes a plain array ("server fetch, client render").
+// - height grows with the row count, so 2 rows don't float in a 224px box
+// - no entry animation: bars are complete on first paint (no blank-chart flash)
+// - single series → one accent hue, no legend; values direct-labeled (≤ 8 rows)
+const ROW_H = 40;
+
+export default function TrendingBarChart({
+  data,
+  valueKey = "clicks",
+  valueLabel = "Clicks",
+}) {
   if (!data?.length) return null;
+  const height = Math.max(96, data.length * ROW_H + 32);
 
   return (
-    <div className="h-56 w-full">
+    <div className="w-full" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
           data={data}
           layout="vertical"
-          margin={{ top: 4, right: 24, bottom: 4, left: 8 }}
+          margin={{ top: 4, right: 32, bottom: 4, left: 8 }}
         >
           <CartesianGrid
             horizontal={false}
@@ -56,12 +66,19 @@ export default function TrendingBarChart({ data }) {
             }}
           />
           <Bar
-            dataKey="clicks"
-            name="Clicks"
+            dataKey={valueKey}
+            name={valueLabel}
             fill="var(--first-color)"
             radius={[0, 4, 4, 0]}
             barSize={14}
-          />
+            isAnimationActive={false}
+          >
+            <LabelList
+              dataKey={valueKey}
+              position="right"
+              style={{ fill: "var(--text-color)", fontSize: 12 }}
+            />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
     </div>

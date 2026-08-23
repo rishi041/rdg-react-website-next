@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateProductTip, generateTrendingPicks, hasGeminiKey } from "@/lib/ai";
+import {
+  generateProductTip,
+  generateReviewDigest,
+  generateTrendingPicks,
+  generateMarketInsights,
+  hasGeminiKey,
+} from "@/lib/ai";
 
 // 📘 Server Actions: functions that run ONLY on the server but can be called
 // directly from client components like a normal async function — no API route
@@ -36,18 +42,66 @@ export async function approveProduct(id) {
     .single();
   if (!product) throw new Error("Product not found");
 
-  // Generate the tip ONCE, cache it in the row. Approval must succeed even if
-  // the AI call fails — the tip is a nice-to-have.
-  let aiTip = null;
+  // Generate the tip AND the grounded buyer digest ONCE, in parallel, and
+  // cache both on the row. Approval must succeed even if either AI call
+  // fails — they're nice-to-haves (the digest also needs Google Search
+  // grounding quota, which may not be enabled yet).
+  const [tipResult, digestResult] = hasGeminiKey()
+    ? await Promise.allSettled([
+        generateProductTip(product),
+        generateReviewDigest(product.name),
+      ])
+    : [{ status: "rejected" }, { status: "rejected" }];
+  const aiTip = tipResult.status === "fulfilled" ? tipResult.value : null;
+  const digest = digestResult.status === "fulfilled" ? digestResult.value : null;
+  if (tipResult.status === "rejected" && tipResult.reason)
+    console.error("AI tip generation failed:", tipResult.reason.message);
+  if (digestResult.status === "rejected" && digestResult.reason)
+    console.error("Review digest failed:", digestResult.reason.message);
+
+  const { error } = await supabase
+    .from("products")
+    .update({
+      status: "approved",
+      ai_tip: aiTip,
+      review_digest: digest?.summary ?? null,
+      review_sources: digest?.sources ?? null,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  refresh();
+}
+
+// (Re)generate the grounded buyer digest for one approved product — backfills
+// products approved before this feature, and lets the admin retry once Google
+// Search grounding quota is available. Throws a readable message on failure.
+export async function generateProductDigest(id) {
+  const supabase = await getAuthedClient();
+  if (!hasGeminiKey())
+    throw new Error("No Gemini API key — set GOOGLE_GENERATIVE_AI_API_KEY in .env.local");
+
+  const { data: product } = await supabase
+    .from("products")
+    .select("id, name")
+    .eq("id", id)
+    .single();
+  if (!product) throw new Error("Product not found");
+
+  let digest;
   try {
-    aiTip = await generateProductTip(product);
+    digest = await generateReviewDigest(product.name);
   } catch (err) {
-    console.error("AI tip generation failed:", err.message);
+    const quota = /quota|RESOURCE_EXHAUSTED|429/i.test(err.message);
+    throw new Error(
+      quota
+        ? "Google Search grounding isn't available on this Gemini key yet (quota). Enable billing on the key and retry."
+        : `Couldn't build a grounded summary: ${err.message}`
+    );
   }
 
   const { error } = await supabase
     .from("products")
-    .update({ status: "approved", ai_tip: aiTip })
+    .update({ review_digest: digest.summary, review_sources: digest.sources })
     .eq("id", id);
   if (error) throw new Error(error.message);
   refresh();
@@ -112,8 +166,17 @@ export async function regenerateAiTrends() {
   const items = await generateTrendingPicks(names.length ? names : ["Other"]);
   // 📘 service-role client: ai_trends has no insert policy on purpose — only
   // the server may write it, never a browser.
-  const { error } = await createAdminClient().from("ai_trends").insert({ items });
+  const admin = createAdminClient();
+  const { error } = await admin.from("ai_trends").insert({ items });
   if (error) throw new Error(error.message);
+  // also refresh the board's AI market pulse (stats + charts); failure here
+  // must not undo the trending refresh that already succeeded
+  try {
+    const insights = await generateMarketInsights(names.length ? names : ["Other"]);
+    await admin.from("ai_insights").insert({ data: insights });
+  } catch (err) {
+    console.error("AI market pulse refresh failed:", err.message);
+  }
   refresh();
   return items.length;
 }

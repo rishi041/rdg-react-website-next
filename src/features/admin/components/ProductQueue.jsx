@@ -2,7 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { approveProduct, rejectProduct, updateProduct } from "../actions";
+import {
+  approveProduct,
+  rejectProduct,
+  updateProduct,
+  generateProductDigest,
+} from "../actions";
 import ProductImage from "@/features/products/components/ProductImage";
 import { Button, Input, Select, Card, Badge, EmptyState } from "@/components/ui";
 
@@ -12,7 +17,13 @@ import { Button, Input, Select, Card, Badge, EmptyState } from "@/components/ui"
 // 📘 Client component calling Server Actions directly — no fetch(), no API
 // route. useTransition gives a pending flag while the action runs on the
 // server; router.refresh() then refetches the revalidated dashboard data.
-export default function ProductQueue({ items, categories = [], hues = {}, mode = "pending" }) {
+export default function ProductQueue({
+  items,
+  categories = [],
+  hues = {},
+  mode = "pending",
+  hasKey = false,
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState(null);
@@ -27,7 +38,9 @@ export default function ProductQueue({ items, categories = [], hues = {}, mode =
         router.refresh();
       } catch (err) {
         console.error(err);
-        alert("Action failed — check the console.");
+        // server actions throw readable messages (e.g. grounding quota) —
+        // surface them instead of a generic failure
+        alert(err?.message || "Action failed — check the console.");
       } finally {
         setBusyId(null);
         setEditingId(null);
@@ -127,6 +140,26 @@ export default function ProductQueue({ items, categories = [], hues = {}, mode =
                         <span title="Detail-page views">
                           <i className="uil uil-eye" /> {p.views} views
                         </span>
+                        {p.review_digest ? (
+                          <span title="Grounded buyer summary is live on the product page">
+                            <i className="uil uil-comments-alt" /> buyer summary ✓
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={busy || !hasKey}
+                            title={
+                              hasKey
+                                ? "Generate a Google-Search-grounded 'What buyers are saying' summary"
+                                : "Needs a Gemini API key"
+                            }
+                            onClick={() => run(p.id, () => generateProductDigest(p.id))}
+                            className="cursor-pointer border-none bg-transparent p-0 text-xs text-accent hover:text-accent-alt disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <i className="uil uil-comments-alt" />{" "}
+                            {busy ? "Generating…" : "Generate buyer summary"}
+                          </button>
+                        )}
                       </span>
                     )}
                   </div>

@@ -56,6 +56,7 @@ export async function getStats() {
   return {
     totalProducts: products.length,
     totalClicks: products.reduce((sum, p) => sum + p.clicks, 0),
+    totalViews: products.reduce((sum, p) => sum + p.views, 0),
     totalCategories: new Set(products.map((p) => p.category)).size,
   };
 }
@@ -99,4 +100,20 @@ export async function getTrending(limit = 5) {
     .order("clicks", { ascending: false })
     .limit(limit);
   return data ?? [];
+}
+
+// Newest cached AI market-pulse payload (see generateMarketInsights). Same
+// weekly staleness contract as getAiTrends.
+export async function getAiInsights() {
+  if (!isSupabaseConfigured()) return { data: null, stale: false, generatedAt: null };
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("ai_insights")
+    .select("data, generated_at")
+    .order("generated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return { data: null, stale: true, generatedAt: null };
+  const stale = Date.now() - new Date(data.generated_at).getTime() > WEEK_MS;
+  return { data: data.data, stale, generatedAt: data.generated_at };
 }

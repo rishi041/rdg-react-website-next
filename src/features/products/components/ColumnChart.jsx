@@ -1,8 +1,8 @@
 "use client";
 
 import {
-  LineChart,
-  Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -10,25 +10,28 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Submissions per week. Single series → accent hue, no legend.
-// Data: [{ week: "12 Jan", count: 3 }, …] — grouped server-side in admin/page.js.
-export default function WeeklyLineChart({ data }) {
+// Generic single-series column chart (time on X, one measure on Y):
+// submissions per week in /admin, AI interest index by month on the board.
+// Accent hue, no legend (the title names the series), no entry animation.
+// 📘 recharts = browser APIs → client component; pages pass plain arrays.
+export default function ColumnChart({ data, xKey, yKey, label, className = "h-52" }) {
   if (!data?.length) return null;
 
   return (
-    <div className="h-56 w-full">
+    <div className={`w-full ${className}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: -16 }}>
+        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -20 }}>
           <CartesianGrid
             vertical={false}
             stroke="var(--scroll-bar-color)"
             strokeDasharray="3 3"
           />
           <XAxis
-            dataKey="week"
-            tick={{ fill: "var(--text-color-light)", fontSize: 12 }}
+            dataKey={xKey}
+            tick={{ fill: "var(--text-color-light)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
+            interval={0}
           />
           <YAxis
             allowDecimals={false}
@@ -37,6 +40,7 @@ export default function WeeklyLineChart({ data }) {
             tickLine={false}
           />
           <Tooltip
+            cursor={{ fill: "var(--input-color)" }}
             contentStyle={{
               background: "var(--container-color)",
               border: "none",
@@ -45,16 +49,15 @@ export default function WeeklyLineChart({ data }) {
               fontSize: 12,
             }}
           />
-          <Line
-            type="monotone"
-            dataKey="count"
-            name="Submissions"
-            stroke="var(--first-color)"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "var(--first-color)", strokeWidth: 0 }}
-            activeDot={{ r: 5 }}
+          <Bar
+            dataKey={yKey}
+            name={label}
+            fill="var(--first-color)"
+            radius={[4, 4, 0, 0]}
+            maxBarSize={28}
+            isAnimationActive={false}
           />
-        </LineChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );

@@ -7,34 +7,40 @@ import AiTrendsPanel from "@/features/admin/components/AiTrendsPanel";
 import SignOutButton from "@/features/admin/components/SignOutButton";
 import { getCategories, getAiTrends } from "@/features/products/queries";
 import { hasGeminiKey } from "@/lib/ai";
-import WeeklyLineChart from "@/features/admin/components/WeeklyLineChart";
+import ColumnChart from "@/features/products/components/ColumnChart";
+import EngagementTable from "@/features/admin/components/EngagementTable";
 import TrendingBarChart from "@/features/products/components/TrendingBarChart";
 import { Card } from "@/components/ui";
 
 export const metadata = { title: "Admin" };
 export const dynamic = "force-dynamic";
 
-// Group submissions per week for the growth chart (server-side — the chart
-// component just receives a plain array).
+// Submissions per week over a FIXED recent window (server-side — the chart
+// just receives a plain array). Weeks with no submissions are included as 0,
+// so the chart reads as a timeline even while the board is young.
+const WEEKS_SHOWN = 8;
+function mondayOf(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
 function groupByWeek(products) {
-  const weeks = new Map();
+  const counts = new Map();
   for (const p of products) {
-    const d = new Date(p.submitted_at);
-    // normalize to that week's Monday
-    const monday = new Date(d);
-    monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-    const key = monday.toISOString().slice(0, 10);
-    weeks.set(key, (weeks.get(key) ?? 0) + 1);
+    const key = mondayOf(p.submitted_at).toISOString().slice(0, 10);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return [...weeks.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, count]) => ({
-      week: new Date(key).toLocaleDateString("en-US", {
-        day: "numeric",
-        month: "short",
-      }),
-      count,
-    }));
+  const thisMonday = mondayOf(new Date());
+  return Array.from({ length: WEEKS_SHOWN }, (_, i) => {
+    const d = new Date(thisMonday);
+    d.setDate(d.getDate() - (WEEKS_SHOWN - 1 - i) * 7);
+    const key = d.toISOString().slice(0, 10);
+    return {
+      week: d.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
+      count: counts.get(key) ?? 0,
+    };
+  });
 }
 
 export default async function AdminPage() {
@@ -74,18 +80,38 @@ export default async function AdminPage() {
   const hues = Object.fromEntries(categories.map((c) => [c.name, c.hue]));
   const pending = products.filter((p) => p.status === "pending");
   const approved = products.filter((p) => p.status === "approved");
-  const totalClicks = products.reduce((sum, p) => sum + p.clicks, 0);
-  const trending = approved
-    .filter((p) => p.clicks > 0)
-    .sort((a, b) => b.clicks - a.clicks)
-    .slice(0, 5)
-    .map(({ id, name, clicks }) => ({ id, name, clicks }));
+  const rejected = products.filter((p) => p.status === "rejected");
+  const totalClicks = approved.reduce((sum, p) => sum + p.clicks, 0);
+  const totalViews = approved.reduce((sum, p) => sum + p.views, 0);
+  const ctr = totalViews ? Math.round((totalClicks / totalViews) * 100) : null;
+  const withDigest = approved.filter((p) => p.review_digest).length;
+
+  // approved products per category (single-series bars; labels carry identity)
+  const byCategory = Object.entries(
+    approved.reduce((acc, p) => ({ ...acc, [p.category]: (acc[p.category] ?? 0) + 1 }), {})
+  )
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
 
   const stats = [
-    { label: "Total products", value: products.length, icon: "uil-box" },
+    { label: "Products", value: products.length, icon: "uil-box" },
     { label: "Approved", value: approved.length, icon: "uil-check-circle" },
     { label: "Pending", value: pending.length, icon: "uil-clock" },
-    { label: "Total clicks", value: totalClicks, icon: "uil-mouse-alt" },
+    { label: "Rejected", value: rejected.length, icon: "uil-times-circle" },
+    { label: "Views", value: totalViews, icon: "uil-eye" },
+    { label: "Buy clicks", value: totalClicks, icon: "uil-mouse-alt" },
+    {
+      label: "Click-through",
+      value: ctr === null ? "—" : `${ctr}%`,
+      icon: "uil-chart-growth",
+      hint: "buy clicks ÷ product views",
+    },
+    {
+      label: "AI summaries",
+      value: `${withDigest}/${approved.length}`,
+      icon: "uil-comments-alt",
+      hint: "approved products with a grounded AI summary",
+    },
   ];
 
   return (
@@ -102,13 +128,13 @@ export default async function AdminPage() {
 
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {stats.map((s) => (
-              <Card key={s.label} className="flex items-center gap-3">
+              <Card key={s.label} className="flex items-center gap-3" title={s.hint}>
                 <i className={`uil ${s.icon} text-2xl text-accent`} />
-                <div>
+                <div className="min-w-0">
                   <div className="text-2xl font-semibold text-title">
                     {s.value}
                   </div>
-                  <div className="text-sm text-body-light">{s.label}</div>
+                  <div className="text-xs leading-tight text-body-light">{s.label}</div>
                 </div>
               </Card>
             ))}
@@ -117,18 +143,48 @@ export default async function AdminPage() {
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <h3 className="mb-2 font-semibold text-title">
-                <i className="uil uil-chart-line text-accent" /> Submissions per
+                <i className="uil uil-chart-bar text-accent" /> Submissions per
                 week
+                <span className="ml-2 text-xs font-normal text-body-light">
+                  last {WEEKS_SHOWN} weeks
+                </span>
               </h3>
-              <WeeklyLineChart data={groupByWeek(products)} />
+              <ColumnChart
+                data={groupByWeek(products)}
+                xKey="week"
+                yKey="count"
+                label="Submissions"
+              />
             </Card>
             <Card>
               <h3 className="mb-2 font-semibold text-title">
-                <i className="uil uil-fire text-accent" /> Top 5 by clicks
+                <i className="uil uil-apps text-accent" /> Approved products by
+                category
               </h3>
-              <TrendingBarChart data={trending} />
+              {byCategory.length ? (
+                <TrendingBarChart
+                  data={byCategory}
+                  valueKey="count"
+                  valueLabel="Products"
+                />
+              ) : (
+                <p className="py-6 text-center text-sm text-body-light">
+                  Approve products to see the category mix.
+                </p>
+              )}
             </Card>
           </div>
+
+          <Card>
+            <h3 className="mb-3 font-semibold text-title">
+              <i className="uil uil-chart-growth text-accent" /> Engagement per
+              product
+              <span className="ml-2 text-xs font-normal text-body-light">
+                views → buy clicks → click-through
+              </span>
+            </h3>
+            <EngagementTable products={approved} />
+          </Card>
 
           <CategoryManager categories={categories} />
 
@@ -159,6 +215,7 @@ export default async function AdminPage() {
               categories={categories.map((c) => c.name)}
               hues={hues}
               mode="approved"
+              hasKey={hasGeminiKey()}
             />
           </div>
         </div>

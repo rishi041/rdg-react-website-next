@@ -6,11 +6,13 @@ import {
   getTrending,
   getCategories,
   getAiTrends,
+  getAiInsights,
 } from "@/features/products/queries";
-import { generateTrendingPicks, hasGeminiKey } from "@/lib/ai";
+import { generateTrendingPicks, generateMarketInsights, hasGeminiKey } from "@/lib/ai";
 import ChatWidget from "@/features/products/components/ChatWidget";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AiTrendingStrip from "@/features/products/components/AiTrendingStrip";
+import AiMarketPulse from "@/features/products/components/AiMarketPulse";
 import ProductGrid from "@/features/products/components/ProductGrid";
 import StatsBar from "@/features/products/components/StatsBar";
 import TrendingStrip from "@/features/products/components/TrendingStrip";
@@ -18,6 +20,9 @@ import TrendingBarChart from "@/features/products/components/TrendingBarChart";
 import { Card } from "@/components/ui";
 import SearchFilterBar from "@/features/products/components/SearchFilterBar";
 import SearchTip from "@/features/products/components/SearchTip";
+import SearchDigest from "@/features/products/components/SearchDigest";
+import ShoppingPicks from "@/features/products/components/ShoppingPicks";
+import IndiaPicks from "@/features/products/components/IndiaPicks";
 import RelatedRow from "@/features/products/components/RelatedRow";
 
 // title comes from the (board) layout's metadata default
@@ -44,6 +49,22 @@ async function getAiTrendsWithRefresh(categoryNames) {
   }
 }
 
+// Same lazy weekly refresh for the AI market pulse (stats + charts payload).
+async function getAiInsightsWithRefresh(categoryNames) {
+  const cached = await getAiInsights();
+  if (!cached.stale || !hasGeminiKey()) return cached;
+  try {
+    const fresh = await generateMarketInsights(
+      categoryNames.length ? categoryNames : ["Other"]
+    );
+    await createAdminClient().from("ai_insights").insert({ data: fresh });
+    return { data: fresh, generatedAt: new Date().toISOString() };
+  } catch (err) {
+    console.error("AI insights refresh failed:", err.message);
+    return cached; // last cached payload, or null → section hidden
+  }
+}
+
 export default async function HomePage({ searchParams }) {
   // 📘 Next 15+: searchParams is a Promise — await it.
   const { q = "", category = "" } = await searchParams;
@@ -59,12 +80,13 @@ export default async function HomePage({ searchParams }) {
   const hues = Object.fromEntries(categories.map((c) => [c.name, c.hue]));
 
   // Default view extras (hidden while searching/filtering)
-  const [stats, trending, aiTrends] = isFiltering
-    ? [null, null, null]
+  const [stats, trending, aiTrends, aiInsights] = isFiltering
+    ? [null, null, null, null]
     : await Promise.all([
         getStats(),
         getTrending(),
         getAiTrendsWithRefresh(categoryNames),
+        getAiInsightsWithRefresh(categoryNames),
       ]);
 
   // "Related" row while filtering: same category as the results, results excluded
@@ -105,6 +127,16 @@ export default async function HomePage({ searchParams }) {
           {isFiltering ? (
             <div className="flex flex-col gap-6">
               <SearchTip term={q} />
+              {/* grounded "What buyers are saying" for the search term —
+                  only for text searches, hidden when grounding unavailable */}
+              <SearchDigest term={q} />
+              {/* Board doesn't have it → AI-picked products for the term
+                  (each opening Google Shopping) come FIRST; the "No products
+                  match" card + Suggest CTA follows below. Board has it → only
+                  our results. Only for text searches with ZERO matches. */}
+              {q && products.length === 0 && (
+                <ShoppingPicks term={q} hues={hues} />
+              )}
               <div>
                 {products.length > 0 && (
                   <p className="mb-3 text-xs text-body-light">
@@ -131,7 +163,15 @@ export default async function HomePage({ searchParams }) {
             <div className="flex flex-col gap-8">
               <StatsBar stats={stats} />
               <AiTrendingStrip items={aiTrends} hues={hues} />
+              {/* "Top picks in India" — the search-fallback picks, but
+                  always on: tabbed preset topics, 10 real products each,
+                  opening Google Shopping. Client island, fetches per tab. */}
+              {hasGeminiKey() && <IndiaPicks hues={hues} />}
               <TrendingStrip products={trending} hues={hues} />
+              <AiMarketPulse
+                insights={aiInsights?.data}
+                generatedAt={aiInsights?.generatedAt}
+              />
               {/* 📘 same server-fetch/client-chart pattern as /admin — the
                   page passes plain rows, recharts renders client-side */}
               {trending?.length > 0 && (
