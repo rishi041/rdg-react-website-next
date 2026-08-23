@@ -1,5 +1,5 @@
-import { streamText, convertToModelMessages } from "ai";
-import { chatModel, hasGeminiKey } from "@/lib/ai";
+import { convertToModelMessages } from "ai";
+import { streamWithFallback, hasGeminiKey } from "@/lib/ai";
 import { getApprovedProducts } from "@/features/products/queries";
 
 // Stop generation after 30s no matter what (protects serverless bills).
@@ -30,8 +30,10 @@ export async function POST(req) {
     )
     .join("\n");
 
-  const result = streamText({
-    model: chatModel,
+  // 📘 same model fallback as the cached features, streaming-aware: if the
+  // primary model is out of daily free quota (429) or overloaded (503) the
+  // reply streams from the next model instead of failing the message.
+  const result = await streamWithFallback({
     system: `You are the friendly shopping assistant for a small community product board.
 
 Products currently on the board:

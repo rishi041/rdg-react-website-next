@@ -127,7 +127,8 @@ export default function ChatWidget() {
 
             {error && (
               <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-500">
-                Something went wrong — try again.
+                The assistant couldn&apos;t answer just now (AI service busy or
+                daily limit reached) — please try again in a moment.
               </p>
             )}
 

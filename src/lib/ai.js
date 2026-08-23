@@ -1,4 +1,4 @@
-import { generateText } from "ai";
+import { generateText, streamText } from "ai";
 import { google } from "@ai-sdk/google";
 
 // 📘 generateText (not streamText): both tips are generated ONCE and cached in
@@ -66,6 +66,53 @@ async function generate(opts, { fallback = true } = {}) {
     }
   }
   throw lastErr;
+}
+
+// streamText with the same model fallback — for the chat. Streaming can't
+// "retry after the fact", so we PEEK: start the stream on one model and read
+// its first meaningful part on a teed branch (the AI SDK tees streams, the
+// response branch is untouched). An error part with 429/503 → mark the model,
+// try the next one; any real error → hand that stream to the client as-is so
+// the normal error path shows. Returns a StreamTextResult either way.
+export async function streamWithFallback(opts) {
+  const now = Date.now();
+  const healthy = MODEL_IDS.filter(
+    (id) => (modelUnavailableUntil.get(id) ?? 0) <= now,
+  );
+  const candidates = healthy.length ? healthy : MODEL_IDS;
+  let last = null;
+  for (const id of candidates) {
+    const result = streamText({ model: google(id), maxRetries: 1, ...opts });
+    let failure = null;
+    try {
+      for await (const part of result.fullStream) {
+        if (part.type === "error") {
+          failure = part.error ?? new Error("stream error");
+          break;
+        }
+        // first real content → this model is answering, commit to it
+        if (
+          part.type === "text-start" ||
+          part.type === "text-delta" ||
+          part.type === "reasoning-delta" ||
+          part.type === "tool-call" ||
+          part.type === "finish"
+        ) {
+          break;
+        }
+      }
+    } catch (err) {
+      failure = err;
+    }
+    if (!failure) return result;
+    last = result;
+    if (!isTransientError(failure)) return result; // real error — show it
+    modelUnavailableUntil.set(id, Date.now() + MODEL_COOLDOWN_MS);
+    console.warn(
+      `[ai] chat: ${id} unavailable (${(failure.lastError ?? failure).statusCode ?? "?"}), trying next model`,
+    );
+  }
+  return last; // every model failed → client sees the error part
 }
 
 // 📘 "DB first, AI once, keep the last good data" — the contract every cached
