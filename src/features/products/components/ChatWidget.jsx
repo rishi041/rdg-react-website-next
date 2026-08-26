@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Spinner } from "@/components/ui";
 
@@ -41,21 +41,71 @@ function renderWithLinks(text) {
   });
 }
 
+// 📘 The widget unmounts on every navigation (it's mounted per page), which
+// would wipe the conversation. sessionStorage has exactly the lifetime we
+// want: survives SPA navigation and reloads within the SAME tab, but a new
+// tab starts fresh. try/catch because storage can throw (private mode) and
+// doesn't exist during the server render.
+const CHAT_KEY = "ogp-chat";
+// storage never changes behind React's back here — the store is "did the
+// client take over yet", so there is nothing to subscribe to
+const subscribeNoop = () => () => {};
+function loadChat() {
+  try {
+    return JSON.parse(sessionStorage.getItem(CHAT_KEY));
+  } catch {
+    return null;
+  }
+}
+function saveChat({ messages, open, seen }) {
+  try {
+    // cap mirrors /api/chat, which only reads the last 30 messages anyway
+    sessionStorage.setItem(
+      CHAT_KEY,
+      JSON.stringify({ messages: messages.slice(-30), open, seen }),
+    );
+  } catch {}
+}
+
 // Floating shopping-assistant chat (lab Project 1 pattern, board edition).
 // 📘 useChat does the heavy lifting: it POSTs the message history to
 // /api/chat, parses the SSE stream, and re-renders `messages` as text deltas
 // arrive — `status` walks ready → submitted → streaming → ready, and stop()
 // aborts the fetch mid-stream (the route forwards that abort to Gemini).
 export default function ChatWidget() {
-  const [open, setOpen] = useState(false);
+  // read the stored conversation once per mount (client only — on the server
+  // the helper returns null, so the first render matches the server HTML)
+  const [initial] = useState(() => loadChat());
+  // 📘 open/seen must render false on the very first client render (that's
+  // what the server HTML shows — differing would be a hydration mismatch).
+  // useSyncExternalStore flips `hydrated` to true right AFTER hydration, so
+  // the stored open/seen kick in one render later; once the visitor clicks
+  // the launcher, their choice takes over.
+  const hydrated = useSyncExternalStore(
+    subscribeNoop,
+    () => true,
+    () => false,
+  );
+  // null until the visitor toggles the launcher themselves
+  const [choice, setChoice] = useState(null);
+  const open = choice ? choice.open : hydrated && Boolean(initial?.open);
   // "live" cue on the launcher (thin breathing ring) until the visitor opens
   // the chat once — after that only the small online dot remains
-  const [seen, setSeen] = useState(false);
+  const seen = choice ? true : hydrated && Boolean(initial?.seen);
   const [input, setInput] = useState("");
-  const { messages, sendMessage, status, stop, error } = useChat();
+  // 📘 useChat accepts initial `messages` — the restored history hydrates the
+  // hook itself, so streaming/status keep working on the restored thread
+  const { messages, sendMessage, status, stop, error } = useChat({
+    messages: initial?.messages ?? [],
+  });
   const bottomRef = useRef(null);
 
   const isBusy = status === "submitted" || status === "streaming";
+
+  // every change (new message, stream delta, open/close) refreshes the copy
+  useEffect(() => {
+    saveChat({ messages, open, seen });
+  }, [messages, open, seen]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -85,10 +135,7 @@ export default function ChatWidget() {
             aria-label={
               open ? "Close shopping assistant" : "Open shopping assistant"
             }
-            onClick={() => {
-              setSeen(true);
-              setOpen((v) => !v);
-            }}
+            onClick={() => setChoice({ open: !open })}
             className="relative flex h-14 w-14 cursor-pointer items-center justify-center rounded-full border-none bg-accent text-2xl text-white shadow-lg transition-all hover:bg-accent-alt hover:shadow-xl"
           >
             <i className={`uil ${open ? "uil-times" : "uil-comment-alt-lines"}`} />

@@ -90,7 +90,7 @@ Default view order: **StatsBar → AI trending this week → Top picks in India 
 | Quick tip (search) | `SearchTip` | `search_tips` via `/api/search-tip` | shimmer skeleton while loading |
 | Buyer digest (search / product) | `SearchDigest`, `ReviewDigestCard` | `search_digests`, `products.review_*` | **Google-Search-grounded**, strict: no sources → nothing stored/shown. Needs grounding quota (billing) — hidden until then |
 | Picks from the web (no matches) | `ShoppingPicks` + `PicksGrid` | `search_picks` via `/api/shop-picks?term=` | rule: board has it → show ours only; board doesn't → AI picks with Google Shopping links, shown ABOVE the empty state |
-| Shopping assistant chat | `ChatWidget` + `/api/chat` | none (stateless) | streaming `useChat`; system prompt = live catalog; links only `/products/<id>` or Google search; launcher has a quiet "live" ring + online dot |
+| Shopping assistant chat | `ChatWidget` + `/api/chat` | none (server-side; conversation + open state persist per-tab in `sessionStorage`, key `ogp-chat` — survives navigation/reload, fresh in a new tab) | streaming `useChat`; system prompt = live catalog; links only `/products/<id>` or Google search; launcher has a quiet "live" ring + online dot |
 | Buy click / view tracking | `BuyNowButton`, `ViewTracker` | RPCs `increment_clicks/views` | |
 
 ### Suggest `/suggest` — `SuggestForm` inserts `status='pending'` with the anon key (RLS allows only that); image via upload to `product-images/suggestions/` or pasted URL.
