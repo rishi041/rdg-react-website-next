@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { generateReviewDigest, hasGeminiKey, recentlyFailed, markFailed } from "@/lib/ai";
 
+// a cache-miss generation (with model fallbacks) can exceed the default timeout
+export const maxDuration = 60;
+
 // GET /api/search-digest?term=dumbbell
 // Grounded "What buyers are saying" for a search term — same cache-first
 // shape as /api/search-tip: each term costs at most ONE grounded Gemini call

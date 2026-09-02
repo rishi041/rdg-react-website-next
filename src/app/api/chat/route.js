@@ -3,7 +3,7 @@ import { streamWithFallback, hasGeminiKey } from "@/lib/ai";
 import { getApprovedProducts } from "@/features/products/queries";
 
 // Stop generation after 30s no matter what (protects serverless bills).
-export const maxDuration = 30;
+export const maxDuration = 60; // model fallbacks + long streamed answers
 
 // 📘 The chat endpoint is the one place we use streamText instead of
 // generateText: a human is watching, so tokens should appear as they're

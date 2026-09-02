@@ -77,6 +77,12 @@ SETUP.md                      cloud Supabase / Gemini / Vercel steps
 ### Board `/` (`src/app/(board)/page.js`)
 Default view order: **StatsBar → AI trending this week → Top picks in India → Trending now → AI market pulse → Clicks leaderboard → All products**. Search/filter view: Quick tip → buyer digest → *(no matches only)* "Not on the board yet — picks from the web" → results/empty state → related → clear.
 
+**No page ever blocks on AI**: the two server-fetched AI sections (trending, market pulse)
+live in async components inside `<Suspense>` (fallback `SectionSkeleton`), so the shell
+(header/search/stats/products) streams immediately and the AI html follows when ready —
+same pattern as `AiTipCard` on the product page. Every page/route that may run a Gemini
+call during the request exports `maxDuration = 60` so Vercel doesn't cut the stream off.
+
 | Feature | Component(s) | Data | Notes |
 |---|---|---|---|
 | Search + category chips | `SearchFilterBar` | URL `?q=&category=` | chips = admin-managed `categories`; search box fixed width, chips wrap |

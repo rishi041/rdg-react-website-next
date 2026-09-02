@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   getApprovedProducts,
   getRelatedProducts,
@@ -32,12 +33,17 @@ import SearchDigest from "@/features/products/components/SearchDigest";
 import ShoppingPicks from "@/features/products/components/ShoppingPicks";
 import IndiaPicks from "@/features/products/components/IndiaPicks";
 import RelatedRow from "@/features/products/components/RelatedRow";
+import SectionSkeleton from "@/features/products/components/SectionSkeleton";
 
 // title comes from the (board) layout's metadata default
 
 // 📘 The product board IS the landing page. Content changes whenever the
 // admin approves something — always render fresh.
 export const dynamic = "force-dynamic";
+// 📘 On Vercel a function can be cut off after ~10-15s by default — but a
+// first-ever AI refresh below streams for up to ~25s (model fallbacks). 60s
+// is allowed on the free plan and only applies when something is generating.
+export const maxDuration = 60;
 
 // 📘 "DB first, AI once, keep the last good data" (see lib/ai.js):
 // Lazy weekly refresh of the AI-trending cache — the first visitor after the
@@ -132,6 +138,36 @@ async function getAiInsightsWithRefresh(categoryNames) {
   }
 }
 
+// 📘 Streaming SSR: these two sections are the ONLY awaits that can be slow
+// (a Gemini call when the cache is stale), so they live in their own async
+// server components inside <Suspense>. Next.js sends the page shell (header,
+// search, stats, products) immediately and streams each section's HTML in
+// when its data resolves — the visitor never waits on the AI. Same pattern
+// as AiTipCard on the product page.
+async function AiTrendingSection({ categoryNames, hues }) {
+  const aiTrends = await getAiTrendsWithRefresh(categoryNames);
+  return (
+    <AiTrendingStrip
+      items={aiTrends?.items}
+      hues={hues}
+      generatedAt={aiTrends?.generatedAt}
+      stale={aiTrends?.stale}
+    />
+  );
+}
+
+async function MarketPulseSection({ categoryNames, hues }) {
+  const aiInsights = await getAiInsightsWithRefresh(categoryNames);
+  return (
+    <AiMarketPulse
+      insights={aiInsights?.data}
+      generatedAt={aiInsights?.generatedAt}
+      stale={aiInsights?.stale}
+      hues={hues}
+    />
+  );
+}
+
 export default async function HomePage({ searchParams }) {
   // 📘 Next 15+: searchParams is a Promise — await it.
   const sp = await searchParams;
@@ -150,15 +186,11 @@ export default async function HomePage({ searchParams }) {
   // gradient below colors itself from this, no hardcoded list anywhere.
   const hues = Object.fromEntries(categories.map((c) => [c.name, c.hue]));
 
-  // Default view extras (hidden while searching/filtering)
-  const [stats, trending, aiTrends, aiInsights] = isFiltering
-    ? [null, null, null, null]
-    : await Promise.all([
-        getStats(),
-        getTrending(),
-        getAiTrendsWithRefresh(categoryNames),
-        getAiInsightsWithRefresh(categoryNames),
-      ]);
+  // Default view extras (hidden while searching/filtering) — fast DB reads
+  // only; the slow AI sections stream separately (components above).
+  const [stats, trending] = isFiltering
+    ? [null, null]
+    : await Promise.all([getStats(), getTrending()]);
 
   // "Related" row while filtering: same category as the results, results excluded
   const relatedCategory = category || products[0]?.category;
@@ -233,23 +265,28 @@ export default async function HomePage({ searchParams }) {
           ) : (
             <div className="flex flex-col gap-8">
               <StatsBar stats={stats} />
-              <AiTrendingStrip
-                items={aiTrends?.items}
-                hues={hues}
-                generatedAt={aiTrends?.generatedAt}
-                stale={aiTrends?.stale}
-              />
+              <Suspense
+                fallback={
+                  <SectionSkeleton
+                    icon="uil-robot"
+                    title="AI trending this week"
+                  />
+                }
+              >
+                <AiTrendingSection categoryNames={categoryNames} hues={hues} />
+              </Suspense>
               {/* "Top picks in India" — the search-fallback picks, but
                   always on: tabbed preset topics, 10 real products each,
                   opening Google Shopping. Client island, fetches per tab. */}
               {hasGeminiKey() && <IndiaPicks hues={hues} />}
               <TrendingStrip products={trending} hues={hues} />
-              <AiMarketPulse
-                insights={aiInsights?.data}
-                generatedAt={aiInsights?.generatedAt}
-                stale={aiInsights?.stale}
-                hues={hues}
-              />
+              <Suspense
+                fallback={
+                  <SectionSkeleton icon="uil-robot" title="AI market pulse" />
+                }
+              >
+                <MarketPulseSection categoryNames={categoryNames} hues={hues} />
+              </Suspense>
               {/* 📘 same server-fetch/client-chart pattern as /admin — the
                   page passes plain rows, recharts renders client-side */}
               {trending?.length > 0 && (

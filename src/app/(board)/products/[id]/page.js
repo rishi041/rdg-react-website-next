@@ -17,6 +17,8 @@ import { hasGeminiKey } from "@/lib/ai";
 import { Badge } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
+// the AiTipCard backfill can stream past Vercel's default function timeout
+export const maxDuration = 60;
 
 // 📘 React cache(): generateMetadata and the page both need the product —
 // dedupe to ONE query per request

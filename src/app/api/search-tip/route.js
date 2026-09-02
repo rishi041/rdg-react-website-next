@@ -4,6 +4,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { generateSearchTip, hasGeminiKey, recentlyFailed, markFailed } from "@/lib/ai";
 
+// a cache-miss generation (with model fallbacks) can exceed the default timeout
+export const maxDuration = 60;
+
 // 📘 Route Handler — the App Router version of an API endpoint.
 // GET /api/search-tip?term=dumbbell
 // Cache-first: each term costs at most ONE Gemini call ever; afterwards it's a

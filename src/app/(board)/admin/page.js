@@ -14,6 +14,8 @@ import { Card } from "@/components/ui";
 
 export const metadata = { title: "Admin" };
 export const dynamic = "force-dynamic";
+// server actions POST to this route — "Regenerate now" runs ~2 Gemini calls
+export const maxDuration = 60;
 
 // Submissions per week over a FIXED recent window (server-side — the chart
 // just receives a plain array). Weeks with no submissions are included as 0,

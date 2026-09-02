@@ -16,6 +16,9 @@ import {
   TOPIC_PICK_COUNT,
 } from "@/features/products/picks-topics";
 
+// a cache-miss generation (with model fallbacks) can exceed the default timeout
+export const maxDuration = 60;
+
 // GET /api/shop-picks?term=laptop          → "picks from the web" for a
 //                                            search with NO board matches
 //                                            (cached forever per term)
